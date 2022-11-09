@@ -1,0 +1,99 @@
+use michelson.Michelson
+
+constant boomerang : address
+
+type param =
+  | Unit unit
+
+predicate boomerang_p (p : param) =
+  match p with
+  | Unit _ -> true
+  end
+
+type boomerang_store = unit
+
+type operation =
+  | Xfer param mutez address
+
+type ctx = (map address mutez, boomerang_store)
+
+function mk_ctx (ledger : map address mutez) (boomerang_s : boomerang_store) : ctx =
+  (ledger, boomerang_s)
+
+function ledger (c : ctx) : map address mutez =
+  match c with x, _ -> x end
+
+function boomerang_s (c : ctx) : boomerang_store =
+  match c with _, x -> x end
+
+predicate ctx_wf (c : ctx) =
+  forall a. c.ledger[a] >= 0
+
+predicate boomerang_post (st : step) (p : unit) (s : boomerang_store) (ops : list operation) (s' : boomerang_store) =
+  s = s' /\
+  (st.amount = 0 -> ops = Nil) /\
+  (st.amount > 0 -> ops = Cons (Xfer (Unit ()) st.amount st.source) Nil)
+
+predicate boomerang_sigma (st : step) (p : unit) (c : ctx) (c' : ctx) =
+  c.ledger[boomerang] = c'.ledger[boomerang] + st.amount
+
+predicate inv (c : ctx) (c' : ctx) =
+  c.ledger[boomerang] = c'.ledger[boomerang]
+
+let rec ghost unknown (g : int) (c : ctx) : ctx
+  requires { ctx_wf c }
+  ensures { inv c result }
+  raises { Terminate }
+  variant { g }
+  =
+  if g <= 0 then raise Terminate
+  else
+  if any bool then c
+  else
+  let st = any step ensures { st_wf result } in
+  let dst = st.self in
+  let p = any param in
+  assume
+  {
+    st.source <> boomerang /\
+    st.sender <> boomerang /\
+    dst = boomerang /\
+    (dst = boomerang -> boomerang_p p) /\
+    st.amount <= c.ledger[st.sender]
+  };
+  let c0 = mk_ctx (transfer c.ledger st.sender dst st.amount) c.boomerang_s in
+  if dst = boomerang then
+    match p with
+    | Unit p -> boomerang_func (g - 1) st p c0
+    | _ -> absurd
+    end
+  else absurd
+
+with ghost boomerang_func (g : int) (st : step) (p : unit) (c : ctx) : ctx
+  requires { ctx_wf c /\ st_wf st /\ st.self = boomerang /\ c.ledger[st.self] >= st.amount }
+  ensures { boomerang_sigma st p c result }
+  raises { Terminate }
+  variant { g }
+  =
+  if g <= 0 then raise Terminate
+  else
+  let s' = any boomerang_store in
+  let ops = any (list operation) in
+  assume
+  {
+    boomerang_post st p c.boomerang_s ops s'
+  };
+  let c0 = mk_ctx c.ledger s' in
+  match ops with
+  | Nil -> c0
+  | Cons (Xfer p1 amt1 dst1) Nil ->
+    let c1 = mk_ctx (transfer c0.ledger st.self dst1 amt1) c0.boomerang_s in
+    let st = mk_step st.source st.self dst1 amt1 in
+    if dst1 = boomerang then
+      match p1 with
+      | Unit p -> boomerang_func (g - 1) st p c1
+      | _ -> absurd
+      end
+    else unknown (g - 1) c1
+  | _ -> absurd
+  end

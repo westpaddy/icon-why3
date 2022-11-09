@@ -1,0 +1,5 @@
+(install
+ (section share_root)
+ (files
+  (michelson.mlw as why3/stdlib/michelson.mlw))
+ (package icon))

@@ -1,0 +1,10 @@
+(executable
+ (name plugin_icon)
+ (modes plugin)
+ (libraries why3))
+
+(install
+ (section lib_root)
+ (files
+  (plugin_icon.cmxs as why3/plugins/plugin_icon.cmxs))
+ (package icon))

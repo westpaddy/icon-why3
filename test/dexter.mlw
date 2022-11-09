@@ -1,0 +1,246 @@
+use michelson.Michelson
+
+constant cpmm : address
+
+constant fa : address
+
+axiom Address_distinct: cpmm <> fa
+
+type param =
+  | Cpmm_param (nat, address, address)
+  | Fa_param (or (address, address, nat) address)
+  | Unit unit
+
+predicate cpmm_param_wf (p : (nat, address, address)) =
+  let n, _, _ = p in n >= 0
+
+predicate cpmm_param (p : param) =
+  match p with Cpmm_param p -> cpmm_param_wf p | _ -> false end
+
+predicate fa_param_wf (p : (or (address, address, nat) address)) =
+  match p with
+  | Left (_, _, n) -> n >= 0
+  | Right _ -> true
+  end
+  
+predicate fa_param (p : param) =
+  match p with
+  | Fa_param p -> fa_param_wf p
+  | _ -> false
+  end
+
+type operation =
+  | Xfer param mutez address
+
+type cpmm_store = (nat, nat, address)
+
+type fa_store = (map address nat, map address (map address bool))
+
+type ctx = (map address mutez, cpmm_store, fa_store)
+
+function mk_ctx (ledger : map address mutez) (cpmm_s : cpmm_store) (fa_s : fa_store) : ctx = (ledger, cpmm_s, fa_s)
+
+function ledger (c : ctx) : map address mutez =
+  match c with x, _, _ -> x end
+
+function cpmm_s (c : ctx) : cpmm_store =
+  match c with _, x, _ -> x end
+
+function fa_s (c : ctx) : fa_store =
+  match c with _, _, x -> x end
+
+predicate cpmm_post (st : step) (p : (nat, address, address)) (s : cpmm_store) (ops : list operation) (s' : cpmm_store) =
+  let token_pool, xtz_pool, token_contract = s in
+  let token_pool', xtz_pool', token_contract' = s' in
+  match p with
+  | token_sold, token_owner, receipient ->
+    token_sold > 0 /\
+    token_owner <> st.self /\
+    let b = div (token_sold * xtz_pool) (token_sold + token_pool) in
+    token_pool' = token_pool + token_sold /\
+    xtz_pool' = xtz_pool - b /\
+    token_contract = token_contract' /\
+    ops = Cons (Xfer (Fa_param (Left (token_owner, st.self, token_sold))) 0 token_contract)
+              (Cons (Xfer (Unit ()) b receipient)
+                Nil)
+  end
+
+predicate cpmm_sigma_pre (c : ctx) =
+  let token_pool, xtz_pool, token_contract = c.cpmm_s in
+  let token_ledger, approval = c.fa_s in
+  token_contract = fa /\
+  approval[cpmm] = const false /\
+  token_pool <= token_ledger[cpmm]
+
+predicate cpmm_sigma_post (st : step) (p : (nat, address, address)) (c : ctx) (c' : ctx) =
+  let token_pool, xtz_pool, token_contract = c.cpmm_s in
+  let token_pool', xtz_pool', token_contract' = c'.cpmm_s in
+  let token_ledger, approval = c.fa_s in
+  let token_ledger', approval' = c'.fa_s in
+  token_contract' = fa /\
+  approval'[cpmm] = const false /\
+  token_pool' <= token_ledger'[cpmm]
+
+predicate fa_post (st : step) (p : (or (address, address, nat) address)) (s : fa_store) (ops : list operation) (s' : fa_store) =
+  let (ledger, approval) = s in
+  let (ledger', approval') = s' in
+  match p with
+  | Left (_from, _to, _val) ->
+    approval = approval' /\
+    (let l = ledger[_from <- ledger[_from] - _val] in ledger' = l[_to <- l[_to] + _val]) /\
+    (not (_from = st.sender || approval[_from][st.sender]) || not (ledger[_from] >= _val) -> false) /\
+    ops = Nil
+  | Right _spender ->
+    ledger = ledger' /\
+    approval[st.sender <- approval[st.sender][_spender <- true]] = approval' /\
+    ops = Nil
+  end
+
+predicate fa_sigma_pre (c : ctx) =
+  true
+
+predicate fa_sigma_post (st : step) (p : (or (address, address, nat) address)) (c : ctx) (c' : ctx) =
+  c'.cpmm_s = c.cpmm_s /\
+  fa_post st p c.fa_s Nil c'.fa_s
+
+predicate inv_pre (c : ctx) =
+  let token_pool, xtz_pool, token_contract = c.cpmm_s in
+  let token_ledger, approval = c.fa_s in
+  token_contract = fa /\
+  approval[cpmm] = const false /\
+  token_pool <= token_ledger[cpmm]
+
+predicate inv_post (c : ctx) (c' : ctx) =
+  let token_pool, xtz_pool, token_contract = c.cpmm_s in
+  let token_pool', xtz_pool', token_contract' = c'.cpmm_s in
+  let token_ledger, approval = c.fa_s in
+  let token_ledger', approval' = c'.fa_s in
+  token_contract' = fa /\
+  approval'[cpmm] = const false /\
+  token_pool' <= token_ledger'[cpmm]
+
+let rec ghost unknown (g : int) (c : ctx) : ctx
+  requires { inv_pre c }
+  ensures { inv_post c result }
+  raises { Terminate }
+  variant { g }
+  =
+  if g <= 0 then raise Terminate
+  else
+  if any bool then c
+  else
+  let st = any step ensures { st_wf result } in
+  let dst = st.self in
+  let p = any param in
+  assume
+  {
+    st.source <> cpmm /\ st.source <> fa /\
+    st.sender <> cpmm /\ st.sender <> fa /\
+    (dst = cpmm \/ dst = fa) /\
+    (dst = cpmm -> cpmm_param p) /\
+    (dst = fa -> fa_param p)
+  };
+  let c1 =
+    let c0 = mk_ctx (transfer c.ledger st.sender dst st.amount) c.cpmm_s c.fa_s in
+    if dst = cpmm then
+      match p with
+      | Cpmm_param p -> cpmm_func (g - 1) st p c0
+      | _ -> absurd
+      end
+    else if dst = fa then
+      match p with
+      | Fa_param p -> fa_func (g - 1) st p c0
+      | _ -> absurd
+      end
+    else absurd
+  in unknown (g - 1) c1
+
+with ghost cpmm_func (g : int) (st : step) (p : (nat, address, address)) (c : ctx) : ctx
+  requires { st.self = cpmm /\ cpmm_param_wf p }
+  requires { cpmm_sigma_pre c }
+  ensures { cpmm_sigma_post st p c result }
+  raises { Terminate }
+  variant { g }
+   =
+  if g <= 0 then raise Terminate
+  else
+  let s' = any cpmm_store in
+  let ops = any (list operation) in
+  assume
+  {
+    cpmm_post st p c.cpmm_s ops s'
+  };
+  let c0 = mk_ctx c.ledger s' c.fa_s in
+  match ops with
+  | Nil -> c0
+  | Cons (Xfer p1 amt1 dst1) Nil ->
+    let c1 = mk_ctx (transfer c0.ledger st.self dst1 amt1) c0.cpmm_s c0.fa_s in
+    let st = mk_step st.source st.self dst1 amt1 in
+    if dst1 = cpmm then
+      match p1 with
+      | Cpmm_param p -> cpmm_func (g - 1) st p c1
+      | _ -> absurd
+      end
+    else if dst1 = fa then
+      match p1 with
+      | Fa_param p -> fa_func (g - 1) st p c1
+      | _ -> absurd
+      end
+    else unknown (g - 1) c1
+  | Cons (Xfer p1 amt1 dst1) (Cons (Xfer p2 amt2 dst2) Nil) ->
+    let c1 =
+      let c = mk_ctx (transfer c0.ledger st.self dst1 amt1) c0.cpmm_s c0.fa_s in
+      let st = mk_step st.source st.self dst1 amt1 in
+      if dst1 = cpmm then
+        match p1 with
+        | Cpmm_param p -> cpmm_func (g - 1) st p c
+        | _ -> absurd
+        end
+      else if dst1 = fa then
+        match p1 with
+        | Fa_param p -> fa_func (g - 1) st p c
+        | _ -> absurd
+        end
+      else unknown (g - 1) c
+    in
+    let c2 =
+      let c = mk_ctx (transfer c1.ledger st.self dst2 amt2) c1.cpmm_s c1.fa_s in
+      let st = mk_step st.source st.self dst2 amt2 in
+      if dst2 = cpmm then (
+        assume { cpmm_param p2 };
+        match p2 with
+        | Cpmm_param p -> cpmm_func (g - 1) st p c
+        | _ -> absurd
+        end
+      ) else if dst2 = fa then (
+        assume { fa_param p2 };
+        match p2 with
+        | Fa_param p -> fa_func (g - 1) st p c
+        | _ -> absurd
+        end
+      ) else unknown (g - 1) c
+    in
+    c2
+  | _ -> absurd
+  end
+
+with ghost fa_func (g : int) (st : step) (p : (or (address, address, nat) address)) (c : ctx) : ctx
+  requires { st.self = fa /\ fa_param_wf p }
+  requires { fa_sigma_pre c }
+  ensures { fa_sigma_post st p c result }
+  raises { Terminate }
+  variant { g }
+  =
+  if g <= 0 then raise Terminate
+  else
+  let s' = any fa_store in
+  let ops = any (list operation) in
+  assume
+  {
+    fa_post st p c.fa_s ops s'
+  };
+  let c0 = mk_ctx c.ledger c.cpmm_s s' in
+  match ops with
+  | Nil -> c0
+  | _ -> absurd
+  end

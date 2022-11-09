@@ -1,0 +1,172 @@
+use michelson.Michelson
+
+constant auction : address
+
+type auction_param = (or unit (or unit unit))
+
+type auction_store = (address, timestamp, timestamp, address, mutez, bool, (map address mutez))
+
+predicate auction_s_wf (s : auction_store) =
+  let (beneficiary, auction_start, auction_end, highest_bidder, highest_bid, ended, pending_returns) = s in
+  highest_bid >= 0 /\
+  forall a. pending_returns[a] >= 0
+
+(* Constructor shall be unique for the type of a content *)
+type param =
+  | Auction_p auction_param
+  | Unit_p unit
+
+predicate auction_p (p : param) =
+  match p with Auction_p _ -> true | _ -> false end
+
+type operation =
+  | Xfer param mutez address
+
+predicate operation_wf (o : operation) =
+  match o with
+  | Xfer p amt dst ->
+    dst = auction -> auction_p p
+  end
+
+type ctx = (map address mutez, auction_store)
+
+function mk_ctx (ledger : map address mutez) (auction_s : auction_store) : ctx =
+  (ledger, auction_s)
+
+function ledger (c : ctx) : map address mutez =
+  match c with x, _ -> x end
+
+function auction_s (c : ctx) : auction_store =
+  match c with _, x -> x end
+
+predicate ctx_wf (c : ctx) =
+  (forall a. c.ledger[a] >= 0) /\
+  auction_s_wf c.auction_s
+
+predicate auction_post (st : step) (p : auction_param) (s : auction_store) (ops : list operation) (s' : auction_store) =
+  let (beneficiary, auction_start, auction_end, highest_bidder, highest_bid, ended, pending_returns) = s in
+  match p with
+  | Left () -> (* bid *)
+      ((ended \/
+      st.amount <= highest_bid \/
+      st.sender = beneficiary) -> false) /\
+      let pending_returns = pending_returns[highest_bidder <- pending_returns[highest_bidder] + highest_bid] in
+      s' = (beneficiary, auction_start, auction_end, st.sender, st.amount, ended, pending_returns) /\
+      ops = Nil
+  | Right (Left ()) -> (* withdraw *)
+      (st.amount <> 0 -> false) /\
+      let pending_amount = pending_returns[st.sender] in
+      let pending_returns = pending_returns[st.sender <- 0] in
+      s' = (beneficiary, auction_start, auction_end, highest_bidder, highest_bid, ended, pending_returns) /\
+      ops = Cons (Xfer (Unit_p ()) pending_amount st.sender) Nil
+  | Right (Right ()) -> (* endAuction *)
+      ((ended \/ st.amount <> 0) -> false) /\
+      s' = (beneficiary, auction_start, auction_end, highest_bidder, highest_bid, true, pending_returns) /\
+      ops = Cons (Xfer (Unit_p ()) highest_bid beneficiary) Nil
+  end
+
+function sum_of : map address mutez -> mutez
+
+axiom SumE : sum_of (const 0) = 0
+
+axiom SumI : forall m k v. sum_of m[k <- v] = sum_of m - m[k] + v
+
+predicate inv_pre (c : ctx) =
+  let (beneficiary, auction_start, auction_end, highest_bidder, highest_bid, ended, pending_returns) = c.auction_s in
+  beneficiary <> highest_bidder /\
+  pending_returns[beneficiary] = 0 /\
+  (not ended -> c.ledger[auction] >= highest_bid + sum_of pending_returns) /\
+  (ended -> c.ledger[auction] >= sum_of pending_returns)
+
+predicate inv_post (c : ctx) (c' : ctx) =
+  let (beneficiary, auction_start, auction_end, highest_bidder, highest_bid, ended, pending_returns) = c.auction_s in
+  let (beneficiary', auction_start', auction_end', highest_bidder', highest_bid', ended', pending_returns') = c'.auction_s in
+  beneficiary = beneficiary' /\
+  beneficiary' <> highest_bidder' /\
+  (ended -> ended') /\
+  pending_returns'[beneficiary'] = 0 /\
+  (not ended' -> c'.ledger[auction] >= highest_bid' + sum_of pending_returns') /\
+  (ended' -> c'.ledger[auction] >= sum_of pending_returns')
+
+predicate auction_sigma_pre (st : step) (c : ctx) =
+  let (beneficiary, auction_start, auction_end, highest_bidder, highest_bid, ended, pending_returns) = c.auction_s in
+  beneficiary <> highest_bidder /\
+  pending_returns[beneficiary] = 0 /\
+  (not ended -> c.ledger[auction] - st.amount >= highest_bid + sum_of pending_returns) /\
+  (ended -> c.ledger[auction] - st.amount >= sum_of pending_returns)
+
+predicate auction_sigma_post (st : step) (p : auction_param) (c : ctx) (c' : ctx) =
+  inv_post c c'
+
+let rec ghost unknown (g : int) (c : ctx) : ctx
+  requires { ctx_wf c }
+  ensures { ctx_wf result }
+  requires { inv_pre c }
+  ensures { inv_post c result }
+  raises { Terminate }
+  raises { Insufficient_mutez }
+  variant { g }
+  =
+  if g <= 0 then raise Terminate
+  else
+  if any bool then c
+  else
+  let st = any step ensures { st_wf result } in
+  let dst = st.self in
+  let p = any param in
+  assume
+  {
+    st.source <> auction /\
+    st.sender <> auction /\
+    (dst = auction) /\
+    (dst = auction -> auction_p p)
+  };
+  let c1 =
+    if c.ledger[st.sender] < st.amount then raise Insufficient_mutez
+    else
+    let c0 = mk_ctx (transfer c.ledger st.sender dst st.amount) c.auction_s in
+    if dst = auction then
+        match p with
+        | Auction_p p -> auction_func (g - 1) st p c0
+        | _ -> absurd
+        end
+    else absurd
+  in unknown (g - 1) c1
+
+with ghost auction_func (g : int) (st : step) (p : auction_param) (c : ctx) : ctx
+  requires { st.self = auction }
+  requires { st_wf st }
+  requires { ctx_wf c }
+  ensures { ctx_wf result }
+  requires { auction_sigma_pre st c }
+  ensures { auction_sigma_post st p c result }
+  raises { Terminate }
+  raises { Insufficient_mutez }
+  variant { g }
+  =
+  if g <= 0 then raise Terminate
+  else
+  let s' = any auction_store in
+  let ops = any (list operation) in
+  assume { auction_post st p c.auction_s ops s' };
+  let c0 = mk_ctx c.ledger s' in
+  match ops with
+  | Nil ->
+    c0
+  | Cons (Xfer p1 amt1 dst1) Nil ->
+    let c1 =
+      if c0.ledger[st.self] < amt1 then raise Insufficient_mutez
+      else
+      let c' = mk_ctx (transfer c0.ledger st.self dst1 amt1) c0.auction_s in
+      let st' = mk_step st.source st.self dst1 amt1 in
+      if dst1 = auction then (
+        assume { auction_p p1 };
+        match p1 with
+        | Auction_p p -> auction_func (g - 1) st' p c'
+        | _ -> absurd
+        end
+      ) else unknown (g - 1) c'
+    in
+    c1
+  | _ -> absurd
+  end
