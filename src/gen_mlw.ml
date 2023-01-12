@@ -2,15 +2,74 @@ open Why3
 open Ptree
 open Ptree_helpers
 
+let fresh_id =
+  let count = ref 0 in
+  fun ?(x = "x") () ->
+    incr count;
+    ident @@ Format.sprintf "%s%d" x !count
+
 type contract = {
   cn_name : string;
   cn_param_ty : Sort.t;
   cn_store_ty : Sort.t;
   cn_num_kont : int;
   cn_index : int;
-      (* cn_post : term; *)
-      (* cn_kont : ops list; *)
+  cn_spec : logic_decl;
+  cn_pre : logic_decl;
+  cn_post : logic_decl;
 }
+
+type desc = {
+  d_contracts : contract list;
+  d_inv_pre : logic_decl;
+  d_inv_post : logic_decl;
+}
+
+(* id definitions
+   Magical words should be defined here. *)
+
+let ctx_ty_ident = ident "ctx"
+
+let ctx_wf_ident = ident "ctx_wf"
+
+let step_ty_ident = ident "step"
+
+let step_wf_ident = ident "st_wf"
+
+let param_ty_ident = ident "param"
+
+let operation_ty_ident = ident "operation"
+
+let gas_ident = ident "g"
+
+let terminate_ident = ident "Terminate"
+
+let id_contract_of (c : contract) : ident = ident c.cn_name
+
+let id_param_wf_of (c : contract) : ident = ident @@ c.cn_name ^ "_param_wf"
+
+let id_store_wf_of (c : contract) : ident = ident @@ c.cn_name ^ "_store_wf"
+
+let id_func_of (c : contract) : ident = ident @@ c.cn_name ^ "_func"
+
+let id_spec_of (c : contract) : ident = ident @@ c.cn_name ^ "_spec"
+
+let id_pre_of (c : contract) : ident = ident @@ c.cn_name ^ "_pre"
+
+let id_post_of (c : contract) : ident = ident @@ c.cn_name ^ "_post"
+
+let id_balance_of (c : contract) : ident = ident @@ c.cn_name ^ "_balance"
+
+let id_store_of (c : contract) : ident = ident @@ c.cn_name ^ "_store"
+
+let id_update_balance_of (c : contract) : ident =
+  ident @@ c.cn_name ^ "_balance_update"
+
+let id_update_store_of (c : contract) : ident =
+  ident @@ c.cn_name ^ "_store_update"
+
+let id_is_param_of (c : contract) : ident =
+  ident @@ "is_" ^ c.cn_name ^ "_param"
 
 (** Convert [Sort.t] value into [Why3.Ptree.pty] value.  *)
 let rec pty_of_sort (s : Sort.t) : Ptree.pty =
@@ -38,7 +97,7 @@ let rec pty_of_sort (s : Sort.t) : Ptree.pty =
   | S_mutez -> ty "mutez"
   | S_address -> ty "address"
   | S_contract s -> PTtyapp (qualid [ "contract" ], [ pty_of_sort s ])
-  | S_operation -> ty "operation"
+  | S_operation -> ty operation_ty_ident.id_str
   | S_key -> ty "key"
   | S_key_hash -> ty "key_hash"
   | S_signature -> ty "signature"
@@ -57,53 +116,77 @@ let constr_of_sort (s : Sort.t) : string =
          | _ -> assert false)
   |> Format.sprintf "P%s"
 
-let fresh_id =
-  let count = ref 0 in
-  fun () ->
-    incr count;
-    Format.sprintf "x%d" !count
+let qid (id : ident) : qualid = Qident id
 
-let gas_ident = "g"
-let gas_qualid : qualid = qualid [ gas_ident ]
-let terminate_ident = "Terminate"
-let terminate_qualid : qualid = qualid [ terminate_ident ]
 let mk_internal_id s = s
-let mk_binder ?ty x : binder = (Loc.dummy_position, Some (ident x), false, ty)
-let mk_xpost qid : xpost = (Loc.dummy_position, [ (qid, None) ])
 
-(** convert expression to term *)
-let rec term_of_expr (e : expr) : term =
-  let term_desc =
-    match e.expr_desc with
-    | Eident qid -> Tident qid
-    | Eidapp (f, l) -> Tidapp (f, List.map term_of_expr l)
-    | Etuple el -> Ttuple (List.map term_of_expr el)
-    | Ematch (e, cls, []) ->
-        Tcase (term_of_expr e, List.map (fun (p, e) -> (p, term_of_expr e)) cls)
-    | _ -> assert false
-  in
-  { term_desc; term_loc = e.expr_loc }
+let mk_binder ?pty id : binder = (Loc.dummy_position, Some id, false, pty)
+
+let mk_param x pty = (Loc.dummy_position, Some (ident x), false, pty)
+
+let mk_post t : post =
+  (Loc.dummy_position, [ (pat @@ Pvar (ident "result"), t) ])
+
+let mk_xpost id : xpost = (Loc.dummy_position, [ (qid id, None) ])
+
+module T = struct
+  let mk_not (t : term) : term = term @@ Tnot t
+
+  let mk_imply (t1 : term) (t2 : term) : term =
+    term @@ Tbinnop (t1, Dterm.DTimplies, t2)
+
+  let mk_and (t1 : term) (t2 : term) : term =
+    term @@ Tbinnop (t1, Dterm.DTand, t2)
+
+  (** convert expression to term *)
+  let rec of_expr (e : expr) : term =
+    let term_desc =
+      match e.expr_desc with
+      | Etrue -> Ttrue
+      | Efalse -> Tfalse
+      | Econst c -> Tconst c
+      | Eident qid -> Tident qid
+      | Eidapp (f, l) -> Tidapp (f, List.map of_expr l)
+      | Einnfix (e1, o, e2) -> Tinnfix (of_expr e1, o, of_expr e2)
+      | Etuple el -> Ttuple (List.map of_expr el)
+      | Ematch (e, cls, []) ->
+          Tcase (of_expr e, List.map (fun (p, e) -> (p, of_expr e)) cls)
+      | _ -> assert false
+    in
+    { term_desc; term_loc = e.expr_loc }
+end
 
 module E = struct
-  let mk_var (x : string) : expr = evar @@ qualid [ x ]
+  let mk_var (x : ident) : expr = evar @@ qid x
+
+  let var_of_binder (x : binder) : expr =
+    match x with _, Some x, _, _ -> mk_var x | _ -> assert false
 
   let var_of_param (x : param) : expr =
-    match x with
-    | _, Some x, _, _ -> evar @@ qualid [ x.id_str ]
-    | _ -> assert false
+    match x with _, Some x, _, _ -> mk_var x | _ -> assert false
 
-  let mk_let (x : string) (e1 : expr) (e2 : expr) : expr =
-    expr @@ Elet (ident x, false, RKnone, e1, e2)
+  let mk_let (x : ident) (e1 : expr) (e2 : expr) : expr =
+    expr @@ Elet (x, false, RKnone, e1, e2)
 
-  let mk_seq (el : expr list) : expr =
-    match List.rev el with
-    | [] -> assert false
-    | x :: xs -> List.fold_left (fun tl hd -> expr @@ Esequence (hd, tl)) x xs
+  let mk_seq (e1 : expr) (e2 : expr) : expr = expr @@ Esequence (e1, e2)
 
   let mk_if (e1 : expr) (e2 : expr) (e3 : expr) : expr = expr @@ Eif (e1, e2, e3)
 
-  let mk_any (ty : pty) : expr =
-    expr @@ Eany ([], RKnone, Some ty, pat Pwild, Ity.MaskVisible, empty_spec)
+  let mk_any ?ensure (pty : pty) : expr =
+    let sp_post =
+      match ensure with
+      | None -> []
+      | Some t ->
+          [ (Loc.dummy_position, [ (pat @@ Pvar (ident "result"), t) ]) ]
+    in
+    expr
+    @@ Eany
+         ( [],
+           RKnone,
+           Some pty,
+           pat Pwild,
+           Ity.MaskVisible,
+           { empty_spec with sp_post } )
 
   let mk_bin (e1 : expr) (o : string) (e2 : expr) : expr =
     expr @@ Einnfix (e1, ident @@ Ident.op_infix o, e2)
@@ -118,7 +201,7 @@ module E = struct
            (List.init m (fun i ->
                 if i = n then pat @@ Pvar (ident "x") else pat Pwild))
     in
-    expr @@ Ematch (e, [ (p, mk_var "x") ], [])
+    expr @@ Ematch (e, [ (p, mk_var @@ ident "x") ], [])
 
   let mk_update (e1 : expr) (m : int) (n : int) (e2 : expr) : expr =
     assert (m > 0 && m > n);
@@ -131,7 +214,7 @@ module E = struct
       expr
       @@ Etuple
            (List.init m (fun i ->
-                if i = n then e2 else mk_var (Format.sprintf "x%d" i)))
+                if i = n then e2 else mk_var (ident @@ Format.sprintf "x%d" i)))
     in
     expr @@ Ematch (e1, [ (p, e) ], [])
 
@@ -143,22 +226,33 @@ module Step_constant = struct
     E.mk_tuple [ source; sender; self; amount ]
 
   let source st : expr = eapp (qualid [ "source" ]) [ st ]
+
   let sender st : expr = eapp (qualid [ "sender" ]) [ st ]
+
   let self st : expr = eapp (qualid [ "self" ]) [ st ]
+
   let amount st : expr = eapp (qualid [ "amount" ]) [ st ]
 end
 
-let wrap_gas_check e =
-  let open E in
-  mk_if
-    (mk_bin (mk_var gas_ident) "<=" (econst 0))
-    (expr @@ Eraise (terminate_qualid, None))
-    e
-
-let gas_variant : variant = [ (tvar gas_qualid, None) ]
+let rec sort_wf (s : Sort.t) (p : expr) : term =
+  match s with
+  | S_nat | S_mutez -> T.of_expr @@ E.mk_bin p ">=" @@ econst 0
+  | S_pair (s1, s2) ->
+      T.mk_and (sort_wf s1 @@ E.mk_proj p 2 0) (sort_wf s2 @@ E.mk_proj p 2 1)
+  | S_or (s1, s2) ->
+      term
+      @@ Tcase
+           ( T.of_expr p,
+             [
+               ( pat @@ Papp (qualid [ "Left" ], [ pat @@ Pvar (ident "p") ]),
+                 sort_wf s1 @@ E.mk_var @@ ident "p" );
+               ( pat @@ Papp (qualid [ "Right" ], [ pat @@ Pvar (ident "p") ]),
+                 sort_wf s2 @@ E.mk_var @@ ident "p" );
+             ] )
+  | _ -> term Ttrue
 
 module type Desc = sig
-  val contracts : contract list
+  val desc : desc
 end
 
 module Generator (D : Desc) = struct
@@ -167,134 +261,243 @@ module Generator (D : Desc) = struct
   let contracts =
     List.fold_left
       (fun (s, i) c -> (M.add c.cn_name { c with cn_index = i } s, i + 1))
-      (M.empty, 0) D.contracts
+      (M.empty, 0) D.desc.d_contracts
     |> fst
 
-  let balance_of (ctx : expr) (c : contract) : expr =
-    eapp (qualid [ c.cn_name ^ "_balance" ]) [ ctx ]
+  (* code fragment makers *)
 
-  let store_of (ctx : expr) (c : contract) : expr =
-    eapp (qualid [ c.cn_name ^ "_store" ]) [ ctx ]
+  let ctx_pty = PTtyapp (qid ctx_ty_ident, [])
 
-  let update_balance_of (ctx : expr) (c : contract) (e : expr) : expr =
-    eapp (qualid [ c.cn_name ^ "_balance_update" ]) [ ctx; e ]
+  let step_pty = PTtyapp (qid step_ty_ident, [])
 
-  let update_store_of (ctx : expr) (c : contract) (e : expr) : expr =
-    eapp (qualid [ c.cn_name ^ "_store_update" ]) [ ctx; e ]
+  let param_pty = PTtyapp (qid param_ty_ident, [])
 
-  let incr_balance_of (ctx : expr) (c : contract) (amt : expr) : expr =
-    update_balance_of ctx c (E.mk_bin (balance_of ctx c) "+" amt)
+  let call_ctx_wf (ctx : expr) : term =
+    T.of_expr @@ eapp (qid ctx_wf_ident) [ ctx ]
 
-  let decr_balance_of (ctx : expr) (c : contract) (amt : expr) : expr =
-    update_balance_of ctx c (E.mk_bin (balance_of ctx c) "-" amt)
+  let call_st_wf (st : expr) : term =
+    T.of_expr @@ eapp (qid step_wf_ident) [ st ]
 
-  let assume_spec_of (c : contract) st p s ops s' : expr =
-    E.mk_assume @@ term_of_expr
-    @@ eapp (qualid [ c.cn_name ^ "_spec" ]) [ st; p; s; ops; s' ]
+  let call_inv_pre (ctx : expr) : term =
+    T.of_expr @@ eapp (qualid [ "inv_pre" ]) [ ctx ]
 
-  let dispatch_transfer (ctx : expr) (st : expr) p : expr =
+  let call_inv_post (ctx : expr) (ctx' : expr) : term =
+    T.of_expr @@ eapp (qualid [ "inv_post" ]) [ ctx; ctx' ]
+
+  let wrap_gas_check e =
+    let open E in
+    mk_if
+      (mk_bin (mk_var gas_ident) "<=" (econst 0))
+      (expr @@ Eraise (qid terminate_ident, None))
+      e
+
+  let gas_variant : variant = [ (tvar @@ qid gas_ident, None) ]
+
+  let is_contract_of (c : contract) (e : expr) : expr =
+    E.mk_bin e "=" @@ E.mk_var @@ id_contract_of c
+
+  let call_param_wf_of (c : contract) (e : expr) : expr =
+    eapp (qid @@ id_param_wf_of c) [ e ]
+
+  let call_store_wf_of (c : contract) (e : expr) : expr =
+    eapp (qid @@ id_store_wf_of c) [ e ]
+
+  let call_spec_of (c : contract) (st : expr) (p : expr) (s : expr) (ops : expr)
+      (s' : expr) : term =
+    T.of_expr @@ eapp (qid @@ id_spec_of c) [ st; p; s; ops; s' ]
+
+  let call_pre_of (c : contract) (ctx : expr) : term =
+    T.of_expr @@ eapp (qid @@ id_pre_of c) [ ctx ]
+
+  let call_post_of (c : contract) (st : expr) (p : expr) (ctx : expr)
+      (ctx' : expr) : term =
+    T.of_expr @@ eapp (qid @@ id_post_of c) [ st; p; ctx; ctx' ]
+
+  let assume_spec_of (c : contract) (st : expr) (p : expr) (s : expr)
+      (ops : expr) (s' : expr) : expr =
+    E.mk_assume @@ call_spec_of c st p s ops s'
+
+  let balance_of (c : contract) (ctx : expr) : expr =
+    eapp (qid @@ id_balance_of c) [ ctx ]
+
+  let store_of (c : contract) (ctx : expr) : expr =
+    eapp (qid @@ id_store_of c) [ ctx ]
+
+  let update_balance_of (c : contract) (ctx : expr) (e : expr) : expr =
+    eapp (qid @@ id_update_balance_of c) [ ctx; e ]
+
+  let update_store_of (c : contract) (ctx : expr) (e : expr) : expr =
+    eapp (qid @@ id_update_store_of c) [ ctx; e ]
+
+  let incr_balance_of (c : contract) (ctx : expr) (amt : expr) : expr =
+    update_balance_of c ctx (E.mk_bin (balance_of c ctx) "+" amt)
+
+  let decr_balance_of (c : contract) (ctx : expr) (amt : expr) : expr =
+    update_balance_of c ctx (E.mk_bin (balance_of c ctx) "-" amt)
+
+  let call_func_of (c : contract) (st : expr) (p : expr) (ctx : expr) : expr =
     let extract_param p ty body =
+      let x = fresh_id () in
       expr
       @@ Ematch
            ( p,
              [
-               ( pat
-                 @@ Papp (qualid [ constr_of_sort ty ], [ pat_var @@ ident "p" ]),
-                 body (E.mk_var "p") );
-               (pat @@ Pwild, expr @@ Eabsurd);
+               ( pat @@ Papp (qualid [ constr_of_sort ty ], [ pat_var x ]),
+                 body (E.mk_var x) );
+               (pat Pwild, expr Eabsurd);
              ],
              [] )
     in
-    List.fold_left
-      (fun e { cn_name; cn_param_ty; _ } ->
+    extract_param p c.cn_param_ty @@ fun p ->
+    eapp
+      (qid @@ id_func_of c)
+      [ E.mk_bin (E.mk_var gas_ident) "-" (econst 1); st; p; ctx ]
+
+  let call_unknown (ctx : expr) : expr =
+    eapp
+      (qualid [ "unknown" ])
+      [ E.mk_bin (E.mk_var gas_ident) "-" (econst 1); ctx ]
+
+  let dispatch_transfer (ctx : expr) (st : expr) p : expr =
+    M.fold
+      (fun _ c e ->
         E.mk_if
-          (E.mk_bin (Step_constant.self st) "=" (E.mk_var cn_name))
-          ( extract_param p cn_param_ty @@ fun p ->
-            eapp
-              (qualid [ Format.sprintf "%s_func" cn_name ])
-              [ E.mk_bin (E.mk_var gas_ident) "-" (econst 1); st; p; ctx ] )
-          e)
-      (eapp (qualid [ "unknown" ])
-         [ E.mk_bin (E.mk_var gas_ident) "-" (econst 1); ctx ])
-      D.contracts
+          (is_contract_of c @@ Step_constant.self st)
+          (call_func_of c st p ctx) e)
+      contracts (call_unknown ctx)
 
   let ( let* ) e f =
     let x = fresh_id () in
     E.mk_let x e (f (E.mk_var x))
 
-  let declare_accessor contract =
-    let ctx_ty = PTtyapp (qualid [ "ctx" ], []) in
+  let declare_accessor (contract : contract) : logic_decl list =
+    let x = fresh_id () in
     let n = M.cardinal contracts in
-    let ctx : param = (Loc.dummy_position, Some (ident "c"), false, ctx_ty) in
-    let amt : param =
-      (Loc.dummy_position, Some (ident "m"), false, pty_of_sort Sort.S_mutez)
-    in
-    let s : param =
-      ( Loc.dummy_position,
-        Some (ident "s"),
-        false,
-        pty_of_sort contract.cn_store_ty )
-    in
+    let ctx : param = mk_param "c" ctx_pty in
+    let amt : param = mk_param "m" @@ pty_of_sort Sort.S_mutez in
+    let gp : param = mk_param "p" param_pty in
+    let p : param = mk_param "p" @@ pty_of_sort contract.cn_param_ty in
+    let s : param = mk_param "s" @@ pty_of_sort contract.cn_store_ty in
     [
       {
         ld_loc = Loc.dummy_position;
-        ld_ident = ident @@ contract.cn_name ^ "_balance";
+        ld_ident = id_contract_of contract;
+        ld_params = [];
+        ld_type = Some (pty_of_sort Sort.S_address);
+        ld_def = None;
+      };
+      {
+        ld_loc = Loc.dummy_position;
+        ld_ident = id_param_wf_of contract;
+        ld_params = [ p ];
+        ld_type = None;
+        ld_def = Some (sort_wf contract.cn_param_ty @@ E.var_of_param p);
+      };
+      {
+        ld_loc = Loc.dummy_position;
+        ld_ident = id_store_wf_of contract;
+        ld_params = [ s ];
+        ld_type = None;
+        ld_def = Some (sort_wf contract.cn_store_ty @@ E.var_of_param s);
+      };
+      {
+        ld_loc = Loc.dummy_position;
+        ld_ident = id_is_param_of contract;
+        ld_params = [ gp ];
+        ld_type = None;
+        ld_def =
+          Some
+            (T.of_expr @@ expr
+            @@ Ematch
+                 ( E.var_of_param gp,
+                   [
+                     ( pat
+                       @@ Papp
+                            ( qualid [ constr_of_sort contract.cn_param_ty ],
+                              [ pat @@ Pvar x ] ),
+                       call_param_wf_of contract @@ E.mk_var x );
+                     (pat Pwild, expr Efalse);
+                   ],
+                   [] ));
+      };
+      {
+        ld_loc = Loc.dummy_position;
+        ld_ident = id_balance_of contract;
         ld_params = [ ctx ];
         ld_type = Some (pty_of_sort Sort.S_mutez);
         ld_def =
           Some
-            (term_of_expr
+            (T.of_expr
             @@ E.mk_proj (E.var_of_param ctx) (2 * n) contract.cn_index);
       };
       {
         ld_loc = Loc.dummy_position;
-        ld_ident = ident @@ contract.cn_name ^ "_store";
+        ld_ident = id_store_of contract;
         ld_params = [ ctx ];
         ld_type = Some (pty_of_sort contract.cn_store_ty);
         ld_def =
           Some
-            (term_of_expr
+            (T.of_expr
             @@ E.mk_proj (E.var_of_param ctx) (2 * n) (n + contract.cn_index));
       };
       {
         ld_loc = Loc.dummy_position;
-        ld_ident = ident @@ contract.cn_name ^ "_balance_update";
+        ld_ident = id_update_balance_of contract;
         ld_params = [ ctx; amt ];
-        ld_type = Some ctx_ty;
+        ld_type = Some ctx_pty;
         ld_def =
           Some
-            (term_of_expr
+            (T.of_expr
             @@ E.mk_update (E.var_of_param ctx) (2 * n) contract.cn_index
                  (E.var_of_param amt));
       };
       {
         ld_loc = Loc.dummy_position;
-        ld_ident = ident @@ contract.cn_name ^ "_store_update";
+        ld_ident = id_update_store_of contract;
         ld_params = [ ctx; s ];
-        ld_type = Some ctx_ty;
+        ld_type = Some ctx_pty;
         ld_def =
           Some
-            (term_of_expr
+            (T.of_expr
             @@ E.mk_update (E.var_of_param ctx) (2 * n) (n + contract.cn_index)
                  (E.var_of_param s));
       };
     ]
 
+  let declare_spec (contract : contract) : logic_decl list =
+    [
+      { contract.cn_spec with ld_ident = id_spec_of contract };
+      { contract.cn_pre with ld_ident = id_pre_of contract };
+      { contract.cn_post with ld_ident = id_post_of contract };
+    ]
+
   let known_contract (contract : contract) : fundef =
-    let st = E.mk_var "st" in
-    let param = E.mk_var "p" in
-    let ctx = E.mk_var "c" in
+    let st = mk_binder @@ ident "st" in
+    let param = mk_binder @@ ident "p" in
+    let ctx = mk_binder @@ ident "c" in
     let spec =
       {
         empty_spec with
-        sp_xpost = [ mk_xpost terminate_qualid ];
+        sp_pre =
+          [
+            T.of_expr @@ is_contract_of contract @@ Step_constant.self
+            @@ E.var_of_binder st;
+            T.of_expr @@ call_param_wf_of contract @@ E.var_of_binder param;
+            call_ctx_wf @@ E.var_of_binder ctx;
+            call_st_wf @@ E.var_of_binder st;
+            call_pre_of contract @@ E.var_of_binder ctx;
+          ];
+        sp_post =
+          [
+            mk_post @@ call_ctx_wf @@ E.mk_var @@ ident "result";
+            mk_post
+            @@ call_post_of contract (E.var_of_binder st)
+                 (E.var_of_binder param) (E.var_of_binder ctx)
+                 (E.mk_var @@ ident "result");
+          ];
+        sp_xpost = [ mk_xpost terminate_ident ];
         sp_variant = gas_variant;
       }
-    in
-    let transfer ctx param amt dst : expr =
-      let* ctx = decr_balance_of ctx contract amt in
-      let* st = Step_constant.(mk (source st) (self st) dst amt) in
-      dispatch_transfer ctx st param
     in
     let rec mk_ops_pat n acc =
       if n > 0 then
@@ -303,13 +506,7 @@ module Generator (D : Desc) = struct
         let dst = fresh_id () in
         let p_xfer =
           pat
-          @@ Papp
-               ( qualid [ "Xfer" ],
-                 [
-                   pat_var @@ ident p;
-                   pat_var @@ ident amt;
-                   pat_var @@ ident dst;
-                 ] )
+          @@ Papp (qualid [ "Xfer" ], [ pat_var p; pat_var amt; pat_var dst ])
         in
         mk_ops_pat (n - 1)
           ( pat @@ Papp (qualid [ "Cons" ], [ p_xfer; fst acc ]),
@@ -324,60 +521,233 @@ module Generator (D : Desc) = struct
         match l with
         | [] -> ctx
         | (p, amt, dst) :: tl ->
-            let* ctx = transfer ctx p amt dst in
+            let* ctx =
+              let* ctx = decr_balance_of contract ctx amt in
+              let* st =
+                Step_constant.(
+                  mk
+                    (source @@ E.var_of_binder st)
+                    (self @@ E.var_of_binder st)
+                    dst amt)
+              in
+              dispatch_transfer ctx st p
+            in
             aux ctx tl
       in
       (ops_p, aux ctx binders)
     in
     let body =
-      let* ctx = incr_balance_of ctx contract (Step_constant.amount st) in
-      let* new_s = E.mk_any @@ pty_of_sort contract.cn_store_ty in
-      let* ops = E.mk_any @@ pty_of_sort @@ Sort.(S_list S_operation) in
-      let* _ =
-        assume_spec_of contract st param (store_of ctx contract) ops new_s
+      let* ctx =
+        incr_balance_of contract (E.var_of_binder ctx)
+          (Step_constant.amount @@ E.var_of_binder st)
       in
-      let* ctx = update_store_of ctx contract new_s in
-      let cls =
-        (pat @@ Pwild, expr @@ Eabsurd)
-        :: List.rev_map
+      let* new_s = E.mk_any @@ pty_of_sort contract.cn_store_ty in
+      let* ops = E.mk_any @@ pty_of_sort Sort.(S_list S_operation) in
+      E.mk_seq
+        (assume_spec_of contract (E.var_of_binder st) (E.var_of_binder param)
+           (store_of contract ctx) ops new_s)
+      @@ let* ctx = update_store_of contract ctx new_s in
+         let cls =
+           (pat @@ Pwild, expr @@ Eabsurd)
+           ::
+           List.rev_map
              (fun i -> mk_clause ctx i)
              (List.init (contract.cn_num_kont + 1) Fun.id)
-      in
-      expr @@ Ematch (ops, List.rev cls, [])
+         in
+         expr @@ Ematch (ops, List.rev cls, [])
     in
     let body = wrap_gas_check body in
-    ( ident @@ contract.cn_name ^ "_func",
+    ( id_func_of contract,
       true,
-      RKnone,
-      [ mk_binder gas_ident; mk_binder "st"; mk_binder "p"; mk_binder "c" ],
+      Expr.RKnone,
+      [ mk_binder gas_ident; st; param; ctx ],
       None,
       pat Pwild,
       Ity.MaskVisible,
       spec,
       body )
 
+  let unknown_func_def =
+    let ctx = mk_binder @@ ident "c" in
+    let spec =
+      {
+        empty_spec with
+        sp_pre =
+          [
+            call_ctx_wf @@ E.var_of_binder ctx;
+            call_inv_pre @@ E.var_of_binder ctx;
+          ];
+        sp_post =
+          [
+            mk_post @@ call_ctx_wf @@ E.mk_var @@ ident "result";
+            mk_post
+            @@ call_inv_post (E.var_of_binder ctx)
+            @@ E.mk_var @@ ident "result";
+          ];
+        sp_xpost = [ mk_xpost terminate_ident ];
+        sp_variant = gas_variant;
+      }
+    in
+    let wf st p =
+      M.fold
+        (fun _ c t ->
+          T.mk_not (T.of_expr @@ is_contract_of c @@ Step_constant.source st)
+          ::
+          T.mk_not (T.of_expr @@ is_contract_of c @@ Step_constant.sender st)
+          ::
+          T.mk_imply
+            (T.of_expr @@ is_contract_of c @@ Step_constant.self st)
+            (T.of_expr @@ eapp (qid @@ id_is_param_of c) [ p ])
+          :: t)
+        contracts []
+      |> List.fold_left T.mk_and @@ term Ttrue
+    in
+    let body =
+      E.mk_if (E.mk_any @@ pty_of_sort Sort.S_bool) (E.var_of_binder ctx)
+      @@ let* st =
+           E.mk_any ~ensure:(call_st_wf @@ E.mk_var @@ ident "result") step_pty
+         in
+         let* p = E.mk_any param_pty in
+         E.mk_seq (E.mk_assume @@ wf st p)
+         @@ let* ctx = dispatch_transfer (E.var_of_binder ctx) st p in
+            call_unknown ctx
+    in
+    let body = wrap_gas_check body in
+    ( ident @@ "unknown",
+      true,
+      Expr.RKnone,
+      [ mk_binder gas_ident; ctx ],
+      None,
+      pat Pwild,
+      Ity.MaskVisible,
+      spec,
+      body )
+
+  let ctx_ty_def =
+    let stores =
+      M.bindings contracts |> List.map snd
+      |> List.sort (fun c1 c2 -> compare c1.cn_index c2.cn_index)
+      |> List.map (fun c -> pty_of_sort c.cn_store_ty)
+    in
+    let balances =
+      List.init (M.cardinal contracts) @@ fun _ -> pty_of_sort Sort.S_mutez
+    in
+    Dtype
+      [
+        {
+          td_loc = Loc.dummy_position;
+          td_ident = ctx_ty_ident;
+          td_params = [];
+          td_vis = Public;
+          td_mut = false;
+          td_inv = [];
+          td_wit = None;
+          td_def = TDalias (PTtuple (balances @ stores));
+        };
+      ]
+
+  let param_ty_def =
+    let module S = Set.Make (struct
+      type t = Sort.t
+
+      let compare = compare
+    end) in
+    let d =
+      M.fold
+        (fun _ c -> S.add c.cn_param_ty)
+        contracts (S.singleton Sort.S_unit)
+      |> S.elements
+      |> List.map (fun ty ->
+             ( Loc.dummy_position,
+               ident @@ constr_of_sort ty,
+               [ (Loc.dummy_position, None, false, pty_of_sort ty) ] ))
+    in
+    Dtype
+      [
+        {
+          td_loc = Loc.dummy_position;
+          td_ident = param_ty_ident;
+          td_params = [];
+          td_vis = Public;
+          td_mut = false;
+          td_inv = [];
+          td_wit = None;
+          td_def = TDalgebraic d;
+        };
+      ]
+
+  let operation_ty_def =
+    Dtype
+      [
+        {
+          td_loc = Loc.dummy_position;
+          td_ident = operation_ty_ident;
+          td_params = [];
+          td_vis = Public;
+          td_mut = false;
+          td_inv = [];
+          td_wit = None;
+          td_def =
+            TDalgebraic
+              [
+                ( Loc.dummy_position,
+                  ident @@ "Xfer",
+                  [
+                    (Loc.dummy_position, None, false, param_pty);
+                    (Loc.dummy_position, None, false, pty_of_sort Sort.S_mutez);
+                    (Loc.dummy_position, None, false, pty_of_sort Sort.S_address);
+                  ] );
+              ];
+        };
+      ]
+
+  let ctx_wf_def : decl =
+    let ctx : param = mk_param "ctx" ctx_pty in
+    let d =
+      M.fold
+        (fun _ c t ->
+          T.mk_and t
+          @@ T.mk_and
+               (sort_wf Sort.S_mutez @@ balance_of c @@ E.var_of_param ctx)
+          @@ T.of_expr @@ call_store_wf_of c @@ store_of c @@ E.var_of_param ctx)
+        contracts
+      @@ term Ttrue
+    in
+    Dlogic
+      [
+        {
+          ld_loc = Loc.dummy_position;
+          ld_ident = ctx_wf_ident;
+          ld_params = [ ctx ];
+          ld_type = None;
+          ld_def = Some d;
+        };
+      ]
+
   let accessor =
     List.map (fun (_, c) -> declare_accessor c) @@ M.bindings contracts
     |> List.flatten
+
+  let spec =
+    { D.desc.d_inv_pre with ld_ident = ident @@ "inv_pre" }
+    ::
+    { D.desc.d_inv_post with ld_ident = ident @@ "inv_post" }
+    ::
+    (List.map (fun (_, c) -> declare_spec c) @@ M.bindings contracts
+    |> List.flatten)
 
   let func_def =
     List.map (fun (_, c) -> known_contract c) @@ M.bindings contracts
 end
 
-let file () =
+let file desc =
   let module G = Generator (struct
-    let contracts =
-      [
-        {
-          cn_name = "boomerang";
-          cn_param_ty = Sort.S_unit;
-          cn_store_ty = Sort.S_unit;
-          cn_num_kont = 2;
-          cn_index = 0;
-        };
-      ]
+    let desc = desc
   end) in
   Decls
     ([ use ~import:false [ "michelson"; "Michelson" ] ]
+    @ [ G.ctx_ty_def; G.param_ty_def; G.operation_ty_def ]
     @ List.map (fun ld -> Dlogic [ ld ]) G.accessor
-    @ [ Drec G.func_def ])
+    @ [ G.ctx_wf_def ]
+    @ List.map (fun ld -> Dlogic [ ld ]) G.spec
+    @ [ Drec (G.unknown_func_def :: G.func_def) ])
