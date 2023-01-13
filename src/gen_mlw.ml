@@ -36,13 +36,17 @@ let step_ty_ident = ident "step"
 
 let step_wf_ident = ident "st_wf"
 
-let param_ty_ident = ident "param"
+let gparam_ty_ident = ident "param"
 
 let operation_ty_ident = ident "operation"
 
 let gas_ident = ident "g"
 
 let terminate_ident = ident "Terminate"
+
+let insufficient_mutez_ident = ident "Insufficient_mutez"
+
+let unknown_ident = ident "unknown"
 
 let id_contract_of (c : contract) : ident = ident c.cn_name
 
@@ -117,6 +121,12 @@ let constr_of_sort (s : Sort.t) : string =
   |> Format.sprintf "P%s"
 
 let qid (id : ident) : qualid = Qident id
+
+let binder_id (x : binder) : ident =
+  match x with _, Some x, _, _ -> x | _ -> assert false
+
+let param_id (x : param) : ident =
+  match x with _, Some x, _, _ -> x | _ -> assert false
 
 let mk_internal_id s = s
 
@@ -219,6 +229,8 @@ module E = struct
     expr @@ Ematch (e1, [ (p, e) ], [])
 
   let mk_assume (t : term) : expr = expr @@ Eassert (Expr.Assume, t)
+
+  let mk_raise (x : ident) : expr = expr @@ Eraise (qid x, None)
 end
 
 module Step_constant = struct
@@ -266,56 +278,70 @@ module Generator (D : Desc) = struct
 
   (* code fragment makers *)
 
+  let wrap_assume ~(assumption : term) (e : expr) : expr =
+    E.mk_seq (E.mk_assume assumption) e
+
+  let wrap_gas_check (e : expr) : expr =
+    E.mk_if
+      (E.mk_bin (E.mk_var gas_ident) "<=" (econst 0))
+      (E.mk_raise terminate_ident)
+      e
+
+  let gas_decr : expr = E.mk_bin (E.mk_var gas_ident) "-" @@ econst 1
+
+  let gas_variant : variant = [ (tvar @@ qid gas_ident, None) ]
+
   let ctx_pty = PTtyapp (qid ctx_ty_ident, [])
 
   let step_pty = PTtyapp (qid step_ty_ident, [])
 
-  let param_pty = PTtyapp (qid param_ty_ident, [])
+  let gparam_pty = PTtyapp (qid gparam_ty_ident, [])
 
-  let call_ctx_wf (ctx : expr) : term =
-    T.of_expr @@ eapp (qid ctx_wf_ident) [ ctx ]
+  let call_ctx_wf (ctx : expr) : expr = eapp (qid ctx_wf_ident) [ ctx ]
 
-  let call_st_wf (st : expr) : term =
-    T.of_expr @@ eapp (qid step_wf_ident) [ st ]
+  let call_st_wf (st : expr) : expr = eapp (qid step_wf_ident) [ st ]
 
-  let call_inv_pre (ctx : expr) : term =
-    T.of_expr @@ eapp (qualid [ "inv_pre" ]) [ ctx ]
+  let call_inv_pre (ctx : expr) : expr = eapp (qualid [ "inv_pre" ]) [ ctx ]
 
-  let call_inv_post (ctx : expr) (ctx' : expr) : term =
-    T.of_expr @@ eapp (qualid [ "inv_post" ]) [ ctx; ctx' ]
-
-  let wrap_gas_check e =
-    let open E in
-    mk_if
-      (mk_bin (mk_var gas_ident) "<=" (econst 0))
-      (expr @@ Eraise (qid terminate_ident, None))
-      e
-
-  let gas_variant : variant = [ (tvar @@ qid gas_ident, None) ]
+  let call_inv_post (ctx : expr) (ctx' : expr) : expr =
+    eapp (qualid [ "inv_post" ]) [ ctx; ctx' ]
 
   let is_contract_of (c : contract) (e : expr) : expr =
     E.mk_bin e "=" @@ E.mk_var @@ id_contract_of c
 
-  let call_param_wf_of (c : contract) (e : expr) : expr =
-    eapp (qid @@ id_param_wf_of c) [ e ]
+  let wrap_extract_param_of (c : contract) (gp : expr) (body : expr -> expr) :
+      expr =
+    let p = fresh_id ~x:"p" () in
+    expr
+    @@ Ematch
+         ( gp,
+           [
+             ( pat
+               @@ Papp (qualid [ constr_of_sort c.cn_param_ty ], [ pat_var p ]),
+               body @@ E.mk_var p );
+             (pat Pwild, expr Eabsurd);
+           ],
+           [] )
 
-  let call_store_wf_of (c : contract) (e : expr) : expr =
-    eapp (qid @@ id_store_wf_of c) [ e ]
+  let call_param_wf_of (c : contract) (p : expr) : expr =
+    eapp (qid @@ id_param_wf_of c) [ p ]
+
+  let call_store_wf_of (c : contract) (s : expr) : expr =
+    eapp (qid @@ id_store_wf_of c) [ s ]
 
   let call_spec_of (c : contract) (st : expr) (p : expr) (s : expr) (ops : expr)
-      (s' : expr) : term =
-    T.of_expr @@ eapp (qid @@ id_spec_of c) [ st; p; s; ops; s' ]
+      (s' : expr) : expr =
+    eapp (qid @@ id_spec_of c) [ st; p; s; ops; s' ]
 
-  let call_pre_of (c : contract) (ctx : expr) : term =
-    T.of_expr @@ eapp (qid @@ id_pre_of c) [ ctx ]
+  let call_pre_of (c : contract) (ctx : expr) : expr =
+    eapp (qid @@ id_pre_of c) [ ctx ]
 
   let call_post_of (c : contract) (st : expr) (p : expr) (ctx : expr)
-      (ctx' : expr) : term =
-    T.of_expr @@ eapp (qid @@ id_post_of c) [ st; p; ctx; ctx' ]
+      (ctx' : expr) : expr =
+    eapp (qid @@ id_post_of c) [ st; p; ctx; ctx' ]
 
-  let assume_spec_of (c : contract) (st : expr) (p : expr) (s : expr)
-      (ops : expr) (s' : expr) : expr =
-    E.mk_assume @@ call_spec_of c st p s ops s'
+  let call_is_param_of (c : contract) (gp : expr) : expr =
+    eapp (qid @@ id_is_param_of c) [ gp ]
 
   let balance_of (c : contract) (ctx : expr) : expr =
     eapp (qid @@ id_balance_of c) [ ctx ]
@@ -330,40 +356,26 @@ module Generator (D : Desc) = struct
     eapp (qid @@ id_update_store_of c) [ ctx; e ]
 
   let incr_balance_of (c : contract) (ctx : expr) (amt : expr) : expr =
-    update_balance_of c ctx (E.mk_bin (balance_of c ctx) "+" amt)
+    update_balance_of c ctx @@ E.mk_bin (balance_of c ctx) "+" amt
 
   let decr_balance_of (c : contract) (ctx : expr) (amt : expr) : expr =
-    update_balance_of c ctx (E.mk_bin (balance_of c ctx) "-" amt)
+    update_balance_of c ctx @@ E.mk_bin (balance_of c ctx) "-" amt
 
-  let call_func_of (c : contract) (st : expr) (p : expr) (ctx : expr) : expr =
-    let extract_param p ty body =
-      let x = fresh_id () in
-      expr
-      @@ Ematch
-           ( p,
-             [
-               ( pat @@ Papp (qualid [ constr_of_sort ty ], [ pat_var x ]),
-                 body (E.mk_var x) );
-               (pat Pwild, expr Eabsurd);
-             ],
-             [] )
-    in
-    extract_param p c.cn_param_ty @@ fun p ->
-    eapp
-      (qid @@ id_func_of c)
-      [ E.mk_bin (E.mk_var gas_ident) "-" (econst 1); st; p; ctx ]
+  let call_func_of (c : contract) (st : expr) (gp : expr) (ctx : expr) : expr =
+    wrap_extract_param_of c gp @@ fun p ->
+    eapp (qid @@ id_func_of c) [ gas_decr; st; p; ctx ]
 
   let call_unknown (ctx : expr) : expr =
-    eapp
-      (qualid [ "unknown" ])
-      [ E.mk_bin (E.mk_var gas_ident) "-" (econst 1); ctx ]
+    eapp (qid unknown_ident) [ gas_decr; ctx ]
 
-  let dispatch_transfer (ctx : expr) (st : expr) p : expr =
+  let dispatch_transfer (ctx : expr) (st : expr) (gp : expr) : expr =
     M.fold
       (fun _ c e ->
         E.mk_if
           (is_contract_of c @@ Step_constant.self st)
-          (call_func_of c st p ctx) e)
+          (wrap_assume ~assumption:(T.of_expr @@ call_is_param_of c gp)
+          @@ call_func_of c st gp ctx)
+          e)
       contracts (call_unknown ctx)
 
   let ( let* ) e f =
@@ -371,11 +383,10 @@ module Generator (D : Desc) = struct
     E.mk_let x e (f (E.mk_var x))
 
   let declare_accessor (contract : contract) : logic_decl list =
-    let x = fresh_id () in
     let n = M.cardinal contracts in
     let ctx : param = mk_param "c" ctx_pty in
     let amt : param = mk_param "m" @@ pty_of_sort Sort.S_mutez in
-    let gp : param = mk_param "p" param_pty in
+    let gp : param = mk_param "gp" gparam_pty in
     let p : param = mk_param "p" @@ pty_of_sort contract.cn_param_ty in
     let s : param = mk_param "s" @@ pty_of_sort contract.cn_store_ty in
     [
@@ -406,19 +417,20 @@ module Generator (D : Desc) = struct
         ld_params = [ gp ];
         ld_type = None;
         ld_def =
-          Some
-            (T.of_expr @@ expr
-            @@ Ematch
-                 ( E.var_of_param gp,
-                   [
-                     ( pat
-                       @@ Papp
-                            ( qualid [ constr_of_sort contract.cn_param_ty ],
-                              [ pat @@ Pvar x ] ),
-                       call_param_wf_of contract @@ E.mk_var x );
-                     (pat Pwild, expr Efalse);
-                   ],
-                   [] ));
+          (let p = fresh_id ~x:"p" () in
+           Some
+             (T.of_expr @@ expr
+             @@ Ematch
+                  ( E.var_of_param gp,
+                    [
+                      ( pat
+                        @@ Papp
+                             ( qualid [ constr_of_sort contract.cn_param_ty ],
+                               [ pat @@ Pvar p ] ),
+                        call_param_wf_of contract @@ E.mk_var p );
+                      (pat Pwild, expr Efalse);
+                    ],
+                    [] )));
       };
       {
         ld_loc = Loc.dummy_position;
@@ -483,19 +495,22 @@ module Generator (D : Desc) = struct
             T.of_expr @@ is_contract_of contract @@ Step_constant.self
             @@ E.var_of_binder st;
             T.of_expr @@ call_param_wf_of contract @@ E.var_of_binder param;
-            call_ctx_wf @@ E.var_of_binder ctx;
-            call_st_wf @@ E.var_of_binder st;
-            call_pre_of contract @@ E.var_of_binder ctx;
+            T.of_expr @@ call_ctx_wf @@ E.var_of_binder ctx;
+            T.of_expr @@ call_st_wf @@ E.var_of_binder st;
+            T.of_expr @@ call_pre_of contract @@ E.var_of_binder ctx;
           ];
         sp_post =
           [
-            mk_post @@ call_ctx_wf @@ E.mk_var @@ ident "result";
-            mk_post
+            mk_post @@ T.of_expr @@ call_ctx_wf @@ E.mk_var @@ ident "result";
+            mk_post @@ T.of_expr
             @@ call_post_of contract (E.var_of_binder st)
                  (E.var_of_binder param) (E.var_of_binder ctx)
                  (E.mk_var @@ ident "result");
           ];
-        sp_xpost = [ mk_xpost terminate_ident ];
+        sp_xpost =
+          (if contract.cn_num_kont > 0 then
+           [ mk_xpost terminate_ident; mk_xpost insufficient_mutez_ident ]
+          else [ mk_xpost terminate_ident ]);
         sp_variant = gas_variant;
       }
     in
@@ -522,15 +537,19 @@ module Generator (D : Desc) = struct
         | [] -> ctx
         | (p, amt, dst) :: tl ->
             let* ctx =
-              let* ctx = decr_balance_of contract ctx amt in
-              let* st =
-                Step_constant.(
-                  mk
-                    (source @@ E.var_of_binder st)
-                    (self @@ E.var_of_binder st)
-                    dst amt)
-              in
-              dispatch_transfer ctx st p
+              wrap_assume ~assumption:(sort_wf Sort.S_mutez amt)
+              @@ E.mk_if
+                   (E.mk_bin (balance_of contract ctx) "<" amt)
+                   (E.mk_raise insufficient_mutez_ident)
+              @@ let* ctx = decr_balance_of contract ctx amt in
+                 let* st =
+                   Step_constant.(
+                     mk
+                       (source @@ E.var_of_binder st)
+                       (self @@ E.var_of_binder st)
+                       dst amt)
+                 in
+                 dispatch_transfer ctx st p
             in
             aux ctx tl
       in
@@ -543,9 +562,11 @@ module Generator (D : Desc) = struct
       in
       let* new_s = E.mk_any @@ pty_of_sort contract.cn_store_ty in
       let* ops = E.mk_any @@ pty_of_sort Sort.(S_list S_operation) in
-      E.mk_seq
-        (assume_spec_of contract (E.var_of_binder st) (E.var_of_binder param)
-           (store_of contract ctx) ops new_s)
+      wrap_assume
+        ~assumption:
+          (T.of_expr
+          @@ call_spec_of contract (E.var_of_binder st) (E.var_of_binder param)
+               (store_of contract ctx) ops new_s)
       @@ let* ctx = update_store_of contract ctx new_s in
          let cls =
            (pat @@ Pwild, expr @@ Eabsurd)
@@ -574,30 +595,27 @@ module Generator (D : Desc) = struct
         empty_spec with
         sp_pre =
           [
-            call_ctx_wf @@ E.var_of_binder ctx;
-            call_inv_pre @@ E.var_of_binder ctx;
+            T.of_expr @@ call_ctx_wf @@ E.var_of_binder ctx;
+            T.of_expr @@ call_inv_pre @@ E.var_of_binder ctx;
           ];
         sp_post =
           [
-            mk_post @@ call_ctx_wf @@ E.mk_var @@ ident "result";
-            mk_post
+            mk_post @@ T.of_expr @@ call_ctx_wf @@ E.mk_var @@ ident "result";
+            mk_post @@ T.of_expr
             @@ call_inv_post (E.var_of_binder ctx)
             @@ E.mk_var @@ ident "result";
           ];
-        sp_xpost = [ mk_xpost terminate_ident ];
+        sp_xpost =
+          [ mk_xpost terminate_ident; mk_xpost insufficient_mutez_ident ];
         sp_variant = gas_variant;
       }
     in
-    let wf st p =
+    let wf st =
       M.fold
         (fun _ c t ->
           T.mk_not (T.of_expr @@ is_contract_of c @@ Step_constant.source st)
           ::
           T.mk_not (T.of_expr @@ is_contract_of c @@ Step_constant.sender st)
-          ::
-          T.mk_imply
-            (T.of_expr @@ is_contract_of c @@ Step_constant.self st)
-            (T.of_expr @@ eapp (qid @@ id_is_param_of c) [ p ])
           :: t)
         contracts []
       |> List.fold_left T.mk_and @@ term Ttrue
@@ -605,15 +623,17 @@ module Generator (D : Desc) = struct
     let body =
       E.mk_if (E.mk_any @@ pty_of_sort Sort.S_bool) (E.var_of_binder ctx)
       @@ let* st =
-           E.mk_any ~ensure:(call_st_wf @@ E.mk_var @@ ident "result") step_pty
+           E.mk_any
+             ~ensure:(T.of_expr @@ call_st_wf @@ E.mk_var @@ ident "result")
+             step_pty
          in
-         let* p = E.mk_any param_pty in
-         E.mk_seq (E.mk_assume @@ wf st p)
+         let* p = E.mk_any gparam_pty in
+         wrap_assume ~assumption:(wf st)
          @@ let* ctx = dispatch_transfer (E.var_of_binder ctx) st p in
             call_unknown ctx
     in
     let body = wrap_gas_check body in
-    ( ident @@ "unknown",
+    ( unknown_ident,
       true,
       Expr.RKnone,
       [ mk_binder gas_ident; ctx ],
@@ -666,7 +686,7 @@ module Generator (D : Desc) = struct
       [
         {
           td_loc = Loc.dummy_position;
-          td_ident = param_ty_ident;
+          td_ident = gparam_ty_ident;
           td_params = [];
           td_vis = Public;
           td_mut = false;
@@ -693,7 +713,7 @@ module Generator (D : Desc) = struct
                 ( Loc.dummy_position,
                   ident @@ "Xfer",
                   [
-                    (Loc.dummy_position, None, false, param_pty);
+                    (Loc.dummy_position, None, false, gparam_pty);
                     (Loc.dummy_position, None, false, pty_of_sort Sort.S_mutez);
                     (Loc.dummy_position, None, false, pty_of_sort Sort.S_address);
                   ] );
@@ -706,10 +726,11 @@ module Generator (D : Desc) = struct
     let d =
       M.fold
         (fun _ c t ->
-          T.mk_and t
+          T.mk_and (sort_wf Sort.S_mutez @@ balance_of c @@ E.var_of_param ctx)
           @@ T.mk_and
-               (sort_wf Sort.S_mutez @@ balance_of c @@ E.var_of_param ctx)
-          @@ T.of_expr @@ call_store_wf_of c @@ store_of c @@ E.var_of_param ctx)
+               (T.of_expr @@ call_store_wf_of c @@ store_of c
+              @@ E.var_of_param ctx)
+               t)
         contracts
       @@ term Ttrue
     in
