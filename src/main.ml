@@ -191,7 +191,9 @@ let dexter_desc =
     d_inv_post;
   }
 
-let mlw_file = Gen_mlw.file dexter_desc
+(* let mlw_file = Gen_mlw.file dexter_desc *)
+
+let mlw_file = Gen_mlw.file @@ Translator.parse_file "test/dexter_c.mlw"
 
 let () = Format.printf "%a@." (Mlw_printer.pp_mlw_file ~attr:true) mlw_file
 

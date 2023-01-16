@@ -50,6 +50,8 @@ let unknown_ident = ident "unknown"
 
 let id_contract_of (c : contract) : ident = ident c.cn_name
 
+let id_gparam_of (c : contract) : ident = ident @@ c.cn_name ^ "_gparam"
+
 let id_param_wf_of (c : contract) : ident = ident @@ c.cn_name ^ "_param_wf"
 
 let id_store_wf_of (c : contract) : ident = ident @@ c.cn_name ^ "_store_wf"
@@ -396,6 +398,18 @@ module Generator (D : Desc) = struct
         ld_params = [];
         ld_type = Some (pty_of_sort Sort.S_address);
         ld_def = None;
+      };
+      {
+        ld_loc = Loc.dummy_position;
+        ld_ident = id_gparam_of contract;
+        ld_params = [ p ];
+        ld_type = Some gparam_pty;
+        ld_def =
+          Some
+            (T.of_expr
+            @@ eapp
+                 (qualid [ constr_of_sort contract.cn_param_ty ])
+                 [ E.var_of_param p ]);
       };
       {
         ld_loc = Loc.dummy_position;

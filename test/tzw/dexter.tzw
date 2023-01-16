@@ -1,0 +1,86 @@
+scope Unknown
+
+  predicate pre (c : ctx) =
+    let token_pool, (xtz_pool, token_contract) = c.cpmm_store in
+    let token_ledger, approval = c.fa_store in
+    token_contract = fa /\
+    approval[cpmm] = const false /\
+    token_pool <= token_ledger[cpmm]
+
+  predicate post (c : ctx) (c' : ctx) =
+    let token_pool, (xtz_pool, token_contract) = c.cpmm_store in
+    let token_pool', (xtz_pool', token_contract') = c'.cpmm_store in
+    let token_ledger, approval = c.fa_store in
+    let token_ledger', approval' = c'.fa_store in
+    token_contract' = fa /\
+    approval'[cpmm] = const false /\
+    token_pool' <= token_ledger'[cpmm]
+
+end
+
+scope Cpmm
+
+  type param = (nat, (address, address))
+
+  type store = (nat, (nat, address))
+
+  predicate spec (st : step) (p : (nat, (address, address))) (s : (nat, (nat, address))) (ops : list operation) (s' : (nat, (nat, address))) =
+    let token_pool, (xtz_pool, token_contract) = s in
+    let token_pool', (xtz_pool', token_contract') = s' in
+    let token_sold, (token_owner, receipient) = p in
+    let b = div (token_sold * xtz_pool) (token_sold + token_pool) in
+    token_sold > 0 /\
+    token_owner <> st.self /\
+    token_pool' = token_pool + token_sold /\
+    xtz_pool' = xtz_pool - b /\
+    token_contract = token_contract' /\
+    ops = Cons (Xfer (fa_gparam (Left (token_owner, (st.self, token_sold)))) 0 token_contract)
+                (Cons (Xfer (PUnit ()) b receipient)
+                  Nil)
+
+  predicate pre (c : ctx) =
+    let token_pool, (xtz_pool, token_contract) = c.cpmm_store in
+    let token_ledger, approval = c.fa_store in
+    token_contract = fa /\
+    approval[cpmm] = const false /\
+    token_pool <= token_ledger[cpmm]
+
+  predicate post (st : step) (p : (nat, (address, address))) (c : ctx) (c' : ctx) =
+    let token_pool, (xtz_pool, token_contract) = c.cpmm_store in
+    let token_pool', (xtz_pool', token_contract') = c'.cpmm_store in
+    let token_ledger, approval = c.fa_store in
+    let token_ledger', approval' = c'.fa_store in
+    token_contract' = fa /\
+    approval'[cpmm] = const false /\
+    token_pool' <= token_ledger'[cpmm]
+
+end
+
+scope Fa
+
+  type param = (or (address, (address, nat)) address)
+
+  type store = (map address nat, map address (map address bool))
+
+  predicate spec (st : step) (p : (or (address, (address, nat)) address)) (s : (map address nat, map address (map address bool))) (ops : list operation) (s' : (map address nat, map address (map address bool))) =
+    let (ledger, approval) = s in
+    let (ledger', approval') = s' in
+    match p with
+    | Left (_from, (_to, _val)) ->
+      approval = approval' /\
+      (let l = ledger[_from <- ledger[_from] - _val] in ledger' = l[_to <- l[_to] + _val]) /\
+      (not (_from = st.sender || approval[_from][st.sender]) || not (ledger[_from] >= _val) -> false) /\
+      ops = Nil
+    | Right _spender ->
+      ledger = ledger' /\
+      approval[st.sender <- approval[st.sender][_spender <- true]] = approval' /\
+      ops = Nil
+    end
+
+  predicate pre (c : ctx) = true
+
+  predicate post (st : step) (p : (or (address, (address, nat)) address)) (c : ctx) (c' : ctx) =
+    c.cpmm_store = c'.cpmm_store /\
+    fa_spec st p c.fa_store Nil c'.fa_store
+
+end
