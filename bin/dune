@@ -1,0 +1,6 @@
+(executable
+ (name main)
+ (public_name icon)
+ (libraries why3 lib_icon)
+ (flags
+  (:standard -open Lib_icon)))

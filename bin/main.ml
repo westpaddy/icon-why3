@@ -194,17 +194,10 @@ let dexter_desc =
 (* let mlw_file = Gen_mlw.file dexter_desc *)
 
 let mlw_file = Gen_mlw.file @@ Translator.parse_file "test/dexter_c.mlw"
-
 let () = Format.printf "%a@." (Mlw_printer.pp_mlw_file ~attr:true) mlw_file
-
 let config : Whyconf.config = Whyconf.init_config None
-
 let main : Whyconf.main = Whyconf.get_main config
-
 let libdir = Whyconf.libdir main
-
 let datadir = Whyconf.datadir main
-
 let env : Env.env = Env.create_env ("./whyml/stdlib" :: Whyconf.loadpath main)
-
 let mods = Typing.type_mlw_file env [] "myfile.mlw" mlw_file

@@ -10,7 +10,6 @@ let error ?(loc = Loc.dummy_position) msg =
   Format.kasprintf (fun s -> Result.error @@ Loc.errorm ~loc "%s" s) msg
 
 let ( >>= ) = Result.bind
-
 let ( let* ) = Result.bind
 
 module StringMap = struct

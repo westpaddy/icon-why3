@@ -29,43 +29,24 @@ type desc = {
    Magical words should be defined here. *)
 
 let ctx_ty_ident = ident "ctx"
-
 let ctx_wf_ident = ident "ctx_wf"
-
 let step_ty_ident = ident "step"
-
 let step_wf_ident = ident "st_wf"
-
 let gparam_ty_ident = ident "param"
-
 let operation_ty_ident = ident "operation"
-
 let gas_ident = ident "g"
-
 let terminate_ident = ident "Terminate"
-
 let insufficient_mutez_ident = ident "Insufficient_mutez"
-
 let unknown_ident = ident "unknown"
-
 let id_contract_of (c : contract) : ident = ident c.cn_name
-
 let id_gparam_of (c : contract) : ident = ident @@ c.cn_name ^ "_gparam"
-
 let id_param_wf_of (c : contract) : ident = ident @@ c.cn_name ^ "_param_wf"
-
 let id_store_wf_of (c : contract) : ident = ident @@ c.cn_name ^ "_store_wf"
-
 let id_func_of (c : contract) : ident = ident @@ c.cn_name ^ "_func"
-
 let id_spec_of (c : contract) : ident = ident @@ c.cn_name ^ "_spec"
-
 let id_pre_of (c : contract) : ident = ident @@ c.cn_name ^ "_pre"
-
 let id_post_of (c : contract) : ident = ident @@ c.cn_name ^ "_post"
-
 let id_balance_of (c : contract) : ident = ident @@ c.cn_name ^ "_balance"
-
 let id_store_of (c : contract) : ident = ident @@ c.cn_name ^ "_store"
 
 let id_update_balance_of (c : contract) : ident =
@@ -131,9 +112,7 @@ let param_id (x : param) : ident =
   match x with _, Some x, _, _ -> x | _ -> assert false
 
 let mk_internal_id s = s
-
 let mk_binder ?pty id : binder = (Loc.dummy_position, Some id, false, pty)
-
 let mk_param x pty = (Loc.dummy_position, Some (ident x), false, pty)
 
 let mk_post t : post =
@@ -181,7 +160,6 @@ module E = struct
     expr @@ Elet (x, false, RKnone, e1, e2)
 
   let mk_seq (e1 : expr) (e2 : expr) : expr = expr @@ Esequence (e1, e2)
-
   let mk_if (e1 : expr) (e2 : expr) (e3 : expr) : expr = expr @@ Eif (e1, e2, e3)
 
   let mk_any ?ensure (pty : pty) : expr =
@@ -231,7 +209,6 @@ module E = struct
     expr @@ Ematch (e1, [ (p, e) ], [])
 
   let mk_assume (t : term) : expr = expr @@ Eassert (Expr.Assume, t)
-
   let mk_raise (x : ident) : expr = expr @@ Eraise (qid x, None)
 end
 
@@ -240,11 +217,8 @@ module Step_constant = struct
     E.mk_tuple [ source; sender; self; amount ]
 
   let source st : expr = eapp (qualid [ "source" ]) [ st ]
-
   let sender st : expr = eapp (qualid [ "sender" ]) [ st ]
-
   let self st : expr = eapp (qualid [ "self" ]) [ st ]
-
   let amount st : expr = eapp (qualid [ "amount" ]) [ st ]
 end
 
@@ -290,19 +264,12 @@ module Generator (D : Desc) = struct
       e
 
   let gas_decr : expr = E.mk_bin (E.mk_var gas_ident) "-" @@ econst 1
-
   let gas_variant : variant = [ (tvar @@ qid gas_ident, None) ]
-
   let ctx_pty = PTtyapp (qid ctx_ty_ident, [])
-
   let step_pty = PTtyapp (qid step_ty_ident, [])
-
   let gparam_pty = PTtyapp (qid gparam_ty_ident, [])
-
   let call_ctx_wf (ctx : expr) : expr = eapp (qid ctx_wf_ident) [ ctx ]
-
   let call_st_wf (st : expr) : expr = eapp (qid step_wf_ident) [ st ]
-
   let call_inv_pre (ctx : expr) : expr = eapp (qualid [ "inv_pre" ]) [ ctx ]
 
   let call_inv_post (ctx : expr) (ctx' : expr) : expr =
@@ -584,10 +551,9 @@ module Generator (D : Desc) = struct
       @@ let* ctx = update_store_of contract ctx new_s in
          let cls =
            (pat @@ Pwild, expr @@ Eabsurd)
-           ::
-           List.rev_map
-             (fun i -> mk_clause ctx i)
-             (List.init (contract.cn_num_kont + 1) Fun.id)
+           :: List.rev_map
+                (fun i -> mk_clause ctx i)
+                (List.init (contract.cn_num_kont + 1) Fun.id)
          in
          expr @@ Ematch (ops, List.rev cls, [])
     in
@@ -628,8 +594,7 @@ module Generator (D : Desc) = struct
       M.fold
         (fun _ c t ->
           T.mk_not (T.of_expr @@ is_contract_of c @@ Step_constant.source st)
-          ::
-          T.mk_not (T.of_expr @@ is_contract_of c @@ Step_constant.sender st)
+          :: T.mk_not (T.of_expr @@ is_contract_of c @@ Step_constant.sender st)
           :: t)
         contracts []
       |> List.fold_left T.mk_and @@ term Ttrue
@@ -765,11 +730,9 @@ module Generator (D : Desc) = struct
 
   let spec =
     { D.desc.d_inv_pre with ld_ident = ident @@ "inv_pre" }
-    ::
-    { D.desc.d_inv_post with ld_ident = ident @@ "inv_post" }
-    ::
-    (List.map (fun (_, c) -> declare_spec c) @@ M.bindings contracts
-    |> List.flatten)
+    :: { D.desc.d_inv_post with ld_ident = ident @@ "inv_post" }
+    :: (List.map (fun (_, c) -> declare_spec c) @@ M.bindings contracts
+       |> List.flatten)
 
   let func_def =
     List.map (fun (_, c) -> known_contract c) @@ M.bindings contracts
