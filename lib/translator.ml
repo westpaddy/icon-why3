@@ -148,6 +148,8 @@ let from_tzw mlw : desc iresult =
           StringMap.empty dl
     | _ -> error "tzw only consists of scopes"
   in
+  let d_whyml = StringMap.find_opt "WhyML" decls |> Option.value ~default:[] in
+  let decls = StringMap.remove "WhyML" decls in
   let* unknown_decls =
     StringMap.find_opt "Unknown" decls
     |> Option.to_result ~none:"mandatory scope Unknown is missing"
@@ -162,7 +164,7 @@ let from_tzw mlw : desc iresult =
         ok (contract :: contracts))
       decls []
   in
-  ok { d_contracts; d_inv_pre; d_inv_post }
+  ok { d_contracts; d_inv_pre; d_inv_post; d_whyml }
 
 let parse_file s =
   let f = Lexer.parse_mlw_file @@ Lexing.from_channel @@ open_in s in

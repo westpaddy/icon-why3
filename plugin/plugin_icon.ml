@@ -43,3 +43,16 @@ let simplify env : Task.task Trans.tlist =
 
 let () =
   Trans.register_env_transform_l ~desc:"icon michelson" "icon_simplify" simplify
+
+let read_channel env _path file c =
+  let f = Lexer.parse_mlw_file @@ Lexing.from_channel c in
+  let desc =
+    match Translator.from_tzw f with
+    | Ok l -> l
+    | Error e -> Loc.errorm "%s@." e
+  in
+  Typing.type_mlw_file env [] (file ^ ".mlw") @@ Gen_mlw.file desc
+
+let () =
+  Env.register_format Pmodule.mlw_language "tzw" [ "tzw" ] read_channel
+    ~desc:"iCon project format"

@@ -23,6 +23,7 @@ type desc = {
   d_contracts : contract list;
   d_inv_pre : logic_decl;
   d_inv_post : logic_decl;
+  d_whyml : decl list;
 }
 
 (* id definitions
@@ -746,6 +747,6 @@ let file desc =
     ([ use ~import:false [ "michelson"; "Michelson" ] ]
     @ [ G.ctx_ty_def; G.param_ty_def; G.operation_ty_def ]
     @ List.map (fun ld -> Dlogic [ ld ]) G.accessor
-    @ [ G.ctx_wf_def ]
+    @ [ G.ctx_wf_def ] @ desc.d_whyml
     @ List.map (fun ld -> Dlogic [ ld ]) G.spec
     @ [ Drec (G.unknown_func_def :: G.func_def) ])
