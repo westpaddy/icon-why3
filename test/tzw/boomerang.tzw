@@ -18,6 +18,8 @@ scope Boomerang
     (st.amount = 0 -> ops = Nil) /\
     (st.amount > 0 -> ops = Cons (Xfer (PUnit ()) st.amount st.source) Nil)
 
+  let upper_ops = 1
+
   predicate pre (c : ctx) = true
 
   predicate post (st : step) (p : unit) (c : ctx) (c' : ctx) =

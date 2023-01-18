@@ -59,6 +59,8 @@ scope Auction
         ops = Cons (Xfer (PUnit ()) highest_bid beneficiary) Nil
     end
 
+  let upper_ops = 1
+
   predicate pre (c : ctx) = inv_pre c
 
   predicate post (st : step) (p : (or unit (or unit unit))) (c : ctx) (c' : ctx) = inv_post c c'

@@ -4,7 +4,7 @@ open Gen_mlw
 
 type 'a iresult = ('a, string) Result.t
 
-let ok = Result.ok
+let return = Result.ok
 
 let error ?(loc = Loc.dummy_position) msg =
   Format.kasprintf (fun s -> Result.error @@ Loc.errorm ~loc "%s" s) msg
@@ -21,7 +21,7 @@ module StringMap = struct
       (fun k e acc ->
         let* acc = acc in
         f k e acc)
-      m (ok acc)
+      m (return acc)
 end
 
 module List = struct
@@ -32,7 +32,7 @@ module List = struct
       (fun acc x ->
         let* acc = acc in
         f acc x)
-      (ok acc) l
+      (return acc) l
 end
 
 let rec sort_of_pty (pty : pty) : Sort.t iresult =
@@ -46,53 +46,53 @@ let rec sort_of_pty (pty : pty) : Sort.t iresult =
     | [ pty1; pty2 ] ->
         let* s1 = sort_of_pty pty1 in
         let* s2 = sort_of_pty pty2 in
-        ok (s1, s2)
+        return (s1, s2)
     | _ -> error "expected 2 parameter"
   in
   match pty with
   | PTtyapp (Qident id, pl) -> (
       match id.id_str with
-      | "string" -> ok Sort.S_string
-      | "nat" -> ok Sort.S_nat
-      | "int" -> ok Sort.S_int
-      | "bytes" -> ok Sort.S_bytes
-      | "bool" -> ok Sort.S_bool
-      | "unit" -> ok Sort.S_unit
-      | "timestamp" -> ok Sort.S_timestamp
-      | "mutez" -> ok Sort.S_mutez
-      | "address" -> ok Sort.S_address
-      | "key" -> ok Sort.S_key
-      | "key_hash" -> ok Sort.S_key_hash
-      | "signature" -> ok Sort.S_signature
-      | "chain_id" -> ok Sort.S_chain_id
+      | "string" -> return Sort.S_string
+      | "nat" -> return Sort.S_nat
+      | "int" -> return Sort.S_int
+      | "bytes" -> return Sort.S_bytes
+      | "bool" -> return Sort.S_bool
+      | "unit" -> return Sort.S_unit
+      | "timestamp" -> return Sort.S_timestamp
+      | "mutez" -> return Sort.S_mutez
+      | "address" -> return Sort.S_address
+      | "key" -> return Sort.S_key
+      | "key_hash" -> return Sort.S_key_hash
+      | "signature" -> return Sort.S_signature
+      | "chain_id" -> return Sort.S_chain_id
       | "list" ->
           let* s = elt1 pl in
-          ok @@ Sort.S_list s
+          return @@ Sort.S_list s
       | "option" ->
           let* s = elt1 pl in
-          ok @@ Sort.S_option s
+          return @@ Sort.S_option s
       | "or" ->
           let* s1, s2 = elt2 pl in
-          ok @@ Sort.S_or (s1, s2)
+          return @@ Sort.S_or (s1, s2)
       | "set" ->
           let* s = elt1 pl in
-          ok @@ Sort.S_set s
+          return @@ Sort.S_set s
       | "map" ->
           let* s1, s2 = elt2 pl in
-          ok @@ Sort.S_map (s1, s2)
+          return @@ Sort.S_map (s1, s2)
       | "big_map" ->
           let* s1, s2 = elt2 pl in
-          ok @@ Sort.S_big_map (s1, s2)
+          return @@ Sort.S_big_map (s1, s2)
       | "lambda" ->
           let* s1, s2 = elt2 pl in
-          ok @@ Sort.S_lambda (s1, s2)
+          return @@ Sort.S_lambda (s1, s2)
       | "contract" ->
           let* s = elt1 pl in
-          ok @@ Sort.S_contract s
+          return @@ Sort.S_contract s
       | s -> error "unknown sort %s" s)
   | PTtuple pl ->
       let* s1, s2 = elt2 pl in
-      ok @@ Sort.S_pair (s1, s2)
+      return @@ Sort.S_pair (s1, s2)
   | PTparen pty -> sort_of_pty pty
   | _ -> error "unknown sort %a" (Mlw_printer.pp_pty ~attr:true).closed pty
 
@@ -110,6 +110,12 @@ let find_predicate_def id decls =
     decls
   |> Option.to_result ~none:(Format.sprintf "predicate %s is missing" id)
 
+let find_let_def id decls =
+  List.find_map
+    (function Dlet (x, _, _, e) when x.id_str = id -> Some e | _ -> None)
+    decls
+  |> Option.to_result ~none:(Format.sprintf "constant %s is missing" id)
+
 let contract name decls =
   let sort_alias id =
     find_type_def id decls >>= fun td ->
@@ -120,8 +126,16 @@ let contract name decls =
   let* cn_post = find_predicate_def "post" decls in
   let* cn_param_ty = sort_alias "param" in
   let* cn_store_ty = sort_alias "store" in
-  let* cn_num_kont = ok 2 in
-  ok
+  let* cn_num_kont =
+    find_let_def "upper_ops" decls >>= fun e ->
+    match e.expr_desc with
+    | Econst (ConstInt i) -> (
+        try return @@ BigInt.to_int i.il_int
+        with Failure _ ->
+          error "upper bound length of operation lists is too large")
+    | _ -> error "upper_ops_len shall be an integer constant"
+  in
+  return
     {
       cn_name = String.uncapitalize_ascii name;
       cn_param_ty;
@@ -143,7 +157,7 @@ let from_tzw mlw : desc iresult =
             | Dscope (loc, _, id, dl) ->
                 if Option.is_some @@ StringMap.find_opt id.id_str m then
                   error ~loc "scope %s has been declared" id.id_str
-                else ok @@ StringMap.add id.id_str dl m
+                else return @@ StringMap.add id.id_str dl m
             | _ -> error "tzw only consists of scopes")
           StringMap.empty dl
     | _ -> error "tzw only consists of scopes"
@@ -161,10 +175,10 @@ let from_tzw mlw : desc iresult =
     StringMap.fold_e
       (fun name decls contracts ->
         let* contract = contract name decls in
-        ok (contract :: contracts))
+        return (contract :: contracts))
       decls []
   in
-  ok { d_contracts; d_inv_pre; d_inv_post; d_whyml }
+  return { d_contracts; d_inv_pre; d_inv_post; d_whyml }
 
 let parse_file s =
   let f = Lexer.parse_mlw_file @@ Lexing.from_channel @@ open_in s in

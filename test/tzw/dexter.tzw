@@ -38,6 +38,8 @@ scope Cpmm
                 (Cons (Xfer (PUnit ()) b receipient)
                   Nil)
 
+  let upper_ops = 2
+
   predicate pre (c : ctx) =
     let token_pool, (xtz_pool, token_contract) = c.cpmm_store in
     let token_ledger, approval = c.fa_store in
@@ -76,6 +78,8 @@ scope Fa
       approval[st.sender <- approval[st.sender][_spender <- true]] = approval' /\
       ops = Nil
     end
+
+  let upper_ops = 0
 
   predicate pre (c : ctx) = true
 
