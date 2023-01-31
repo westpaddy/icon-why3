@@ -16,4 +16,6 @@ $ why3 ide test/tzw/boomerang.tzw
 ```
 
 ## Case studies
-You can find examples as `./test/tzw/{boomerang,auction,dexter}.tzw`
+You can find examples as `./test/tzw/{boomerang,auction,dexter}.tzw`.  We
+recommend to use our `icon_simplify` transformations, which is installed as a
+part of the plugin, for large goals.
