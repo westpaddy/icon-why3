@@ -16,7 +16,7 @@ scope Boomerang
   predicate spec (st : step) (p : unit) (s : unit) (ops : list operation) (s' : unit) =
     s = s' /\
     (st.amount = 0 -> ops = Nil) /\
-    (st.amount > 0 -> ops = Cons (Xfer (PUnit ()) st.amount st.source) Nil)
+    (st.amount > 0 -> ops = Cons (Xfer (PUnit ()) st.amount st.sender) Nil)
 
   let upper_ops = 1
 
