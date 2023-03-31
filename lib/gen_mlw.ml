@@ -225,7 +225,7 @@ end
 
 let rec sort_wf (s : Sort.t) (p : expr) : term =
   match s with
-  | S_nat | S_mutez -> T.of_expr @@ E.mk_bin p ">=" @@ econst 0
+  | S_nat | S_mutez -> term Ttrue (* T.of_expr @@ E.mk_bin p ">=" @@ econst 0 *)
   | S_pair (s1, s2) ->
       T.mk_and (sort_wf s1 @@ E.mk_proj p 2 0) (sort_wf s2 @@ E.mk_proj p 2 1)
   | S_or (s1, s2) ->
@@ -326,10 +326,12 @@ module Generator (D : Desc) = struct
     eapp (qid @@ id_update_store_of c) [ ctx; e ]
 
   let incr_balance_of (c : contract) (ctx : expr) (amt : expr) : expr =
-    update_balance_of c ctx @@ E.mk_bin (balance_of c ctx) "+" amt
+    update_balance_of c ctx
+    @@ eapp (qid @@ ident "mutez_add") [ balance_of c ctx; amt ]
 
   let decr_balance_of (c : contract) (ctx : expr) (amt : expr) : expr =
-    update_balance_of c ctx @@ E.mk_bin (balance_of c ctx) "-" amt
+    update_balance_of c ctx
+    @@ eapp (qid @@ ident "mutez_sub") [ balance_of c ctx; amt ]
 
   let call_func_of (c : contract) (st : expr) (gp : expr) (ctx : expr) : expr =
     wrap_extract_param_of c gp @@ fun p ->
@@ -521,7 +523,9 @@ module Generator (D : Desc) = struct
             let* ctx =
               wrap_assume ~assumption:(sort_wf Sort.S_mutez amt)
               @@ E.mk_if
-                   (E.mk_bin (balance_of contract ctx) "<" amt)
+                   (eapp
+                      (qid @@ ident "mutez_lt")
+                      [ balance_of contract ctx; amt ])
                    (E.mk_raise insufficient_mutez_ident)
               @@ let* ctx = decr_balance_of contract ctx amt in
                  let* st =

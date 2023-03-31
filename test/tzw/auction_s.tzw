@@ -1,0 +1,68 @@
+scope WhyML
+
+  function sum_of : map address mutez -> mutez
+
+  axiom SumE : sum_of (const (mk_mutez 0)) = mk_mutez 0
+
+  axiom SumI : forall m k v. (sum_of m[k <- v]).mutez_v = (sum_of m).mutez_v - m[k].mutez_v + v.mutez_v
+
+  axiom SumN : forall m k. mutez_le m[k] (sum_of m)
+
+end
+
+scope Unknown
+
+  predicate pre (c : ctx) =
+    let (beneficiary, (highest_bidder, (highest_bid, (ended, pending_returns)))) = c.auction_store in
+    beneficiary <> highest_bidder /\
+    pending_returns[beneficiary].mutez_v = 0 /\
+    (not ended -> c.auction_balance.mutez_v >= highest_bid.mutez_v + (sum_of pending_returns).mutez_v) /\
+    (ended -> c.auction_balance.mutez_v >= (sum_of pending_returns).mutez_v)
+
+  predicate post (c : ctx) (c' : ctx) =
+    let (beneficiary, (highest_bidder, (highest_bid, (ended, pending_returns)))) = c.auction_store in
+    let (beneficiary', (highest_bidder', (highest_bid', (ended', pending_returns')))) = c'.auction_store in
+    beneficiary = beneficiary' /\
+    beneficiary' <> highest_bidder' /\
+    (ended -> ended') /\
+    pending_returns'[beneficiary'].mutez_v = 0 /\
+    (not ended' -> c'.auction_balance.mutez_v >= highest_bid'.mutez_v + (sum_of pending_returns').mutez_v) /\
+    (ended' -> c'.auction_balance.mutez_v >= (sum_of pending_returns').mutez_v)
+
+end
+
+scope Auction
+
+  type param = (or unit (or unit unit))
+
+  type store = (address, (address, (mutez, (bool, (map address mutez)))))
+
+  predicate spec (st : step) (p : (or unit (or unit unit))) (s : (address, (address, (mutez, (bool, (map address mutez)))))) (ops : list operation) (s' : (address, (address, (mutez, (bool, (map address mutez)))))) =
+    let (beneficiary, (highest_bidder, (highest_bid, (ended, pending_returns)))) = s in
+    match p with
+    | Left () -> (* bid *)
+        (not ended /\
+        st.amount.mutez_v > highest_bid.mutez_v /\
+        st.sender <> beneficiary) /\
+        let pending_returns = pending_returns[highest_bidder <- mutez_add pending_returns[highest_bidder] highest_bid] in
+        s' = (beneficiary, (st.sender, (st.amount, (ended, pending_returns)))) /\
+        ops = Nil
+    | Right (Left ()) -> (* withdraw *)
+        (st.amount.mutez_v > 0) /\
+        let pending_amount = pending_returns[st.sender] in
+        let pending_returns = pending_returns[st.sender <- mk_mutez 0] in
+        s' = (beneficiary, (highest_bidder, (highest_bid, (ended, pending_returns)))) /\
+        ops = Cons (Xfer (PUnit ()) pending_amount st.sender) Nil
+    | Right (Right ()) -> (* endAuction *)
+        (not ended /\ st.amount.mutez_v > 0) /\
+        s' = (beneficiary, (highest_bidder, (highest_bid, (true, pending_returns)))) /\
+        ops = Cons (Xfer (PUnit ()) highest_bid beneficiary) Nil
+    end
+
+  let upper_ops = 1
+
+  predicate pre (c : ctx) = inv_pre c
+
+  predicate post (st : step) (p : (or unit (or unit unit))) (c : ctx) (c' : ctx) = inv_post c c'
+
+end

@@ -3,6 +3,7 @@ scope Unknown
   predicate pre (c : ctx) = true
 
   predicate post (c : ctx) (c' : ctx) =
+    c.boomerang_store.mutez_v <= c'.boomerang_store.mutez_v /\
     c.boomerang_balance.mutez_v = c'.boomerang_balance.mutez_v
 
 end
@@ -11,10 +12,10 @@ scope Boomerang
 
   type param = unit
 
-  type store = unit
+  type store = mutez
 
-  predicate spec (st : step) (p : unit) (s : unit) (ops : list operation) (s' : unit) =
-    s = s' /\
+  predicate spec (st : step) (p : unit) (s : mutez) (ops : list operation) (s' : mutez) =
+    mutez_eq (mutez_add s st.amount) s' /\
     (st.amount.mutez_v = 0 -> ops = Nil) /\
     (st.amount.mutez_v > 0 -> ops = Cons (Xfer (PUnit ()) st.amount st.sender) Nil)
 
@@ -22,7 +23,6 @@ scope Boomerang
 
   predicate pre (c : ctx) = true
 
-  predicate post (st : step) (p : unit) (c : ctx) (c' : ctx) =
-    c.boomerang_balance.mutez_v = c'.boomerang_balance.mutez_v
+  predicate post (st : step) (p : unit) (c : ctx) (c' : ctx) = inv_post c c'
 
 end

@@ -42,6 +42,7 @@ predicate inv (c : ctx) (c' : ctx) =
 
 let rec ghost unknown (g : int) (c : ctx) : ctx
   requires { ctx_wf c }
+  ensures { ctx_wf result }
   ensures { inv c result }
   raises { Terminate }
   variant { g }
@@ -61,16 +62,22 @@ let rec ghost unknown (g : int) (c : ctx) : ctx
     (dst = boomerang -> boomerang_p p) /\
     st.amount <= c.ledger[st.sender]
   };
-  let c0 = mk_ctx (transfer c.ledger st.sender dst st.amount) c.boomerang_s in
-  if dst = boomerang then
-    match p with
-    | Unit p -> boomerang_func (g - 1) st p c0
-    | _ -> absurd
-    end
-  else absurd
+  let c1 =
+    let c0 = mk_ctx (transfer c.ledger st.sender dst st.amount) c.boomerang_s in
+    if dst = boomerang then
+      match p with
+      | Unit p -> boomerang_func (g - 1) st p c0
+      | _ -> absurd
+      end
+    else absurd
+  in unknown (g - 1) c1
 
 with ghost boomerang_func (g : int) (st : step) (p : unit) (c : ctx) : ctx
-  requires { ctx_wf c /\ st_wf st /\ st.self = boomerang /\ c.ledger[st.self] >= st.amount }
+  requires { st.self = boomerang }
+  requires { st_wf st }
+  requires { ctx_wf c }
+  ensures { ctx_wf result }
+  requires { c.ledger[st.self] >= st.amount }
   ensures { boomerang_sigma st p c result }
   raises { Terminate }
   variant { g }

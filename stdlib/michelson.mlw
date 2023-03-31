@@ -9,9 +9,73 @@ module Michelson
   exception Insufficient_mutez
   exception Terminate
 
-  type nat = int
+  type nat = { nat_v : int } invariant { nat_v >= 0 }
 
-  type mutez = int
+  let function mk_nat (n : int) : nat
+    requires { n >= 0 }
+    ensures { result.nat_v = n }
+    =
+    { nat_v = n }
+(*
+  let function nat_add (a : nat) (b : nat) : nat
+    ensures { result.nat_v = a.nat_v + b.nat_v }
+    =
+    { nat_v = a.nat_v + b.nat_v }
+
+  let function nat_sub (a : nat) (b : nat) : nat
+    requires { a.nat_v >= b.nat_v }
+    ensures { result.nat_v = a.nat_v - b.nat_v }
+    =
+    { nat_v = a.nat_v - b.nat_v }
+
+  let function nat_eq (a : nat) (b : nat) : bool
+    ensures { result <-> a.nat_v = b.nat_v }
+    =
+    a.nat_v = b.nat_v
+
+  let function nat_lt (a : nat) (b : nat) : bool
+    ensures { result <-> a.nat_v < b.nat_v }
+    =
+    a.nat_v < b.nat_v
+
+  let function nat_le (a : nat) (b : nat) : bool
+    ensures { result <-> a.nat_v <= b.nat_v }
+    =
+    a.nat_v <= b.nat_v
+*)
+  type mutez = { mutez_v : int } invariant { mutez_v >= 0 }
+
+  let function mk_mutez (n : int) : mutez
+    requires { n >= 0 }
+    ensures { result.mutez_v = n }
+    =
+    { mutez_v = n }
+
+  let function mutez_add (a : mutez) (b : mutez) : mutez
+    ensures { result.mutez_v = a.mutez_v + b.mutez_v }
+    =
+    { mutez_v = a.mutez_v + b.mutez_v }
+
+  let function mutez_sub (a : mutez) (b : mutez) : mutez
+    requires { a.mutez_v >= b.mutez_v }
+    ensures { result.mutez_v = a.mutez_v - b.mutez_v }
+    =
+    { mutez_v = a.mutez_v - b.mutez_v }
+
+  let function mutez_eq (a : mutez) (b : mutez) : bool
+    ensures { result <-> a.mutez_v = b.mutez_v }
+    =
+    a.mutez_v = b.mutez_v
+
+  let function mutez_lt (a : mutez) (b : mutez) : bool
+    ensures { result <-> a.mutez_v < b.mutez_v }
+    =
+    a.mutez_v < b.mutez_v
+
+  let function mutez_le (a : mutez) (b : mutez) : bool
+    ensures { result <-> a.mutez_v <= b.mutez_v }
+    =
+    a.mutez_v <= b.mutez_v
 
   type address = int
 
@@ -21,7 +85,8 @@ module Michelson
 
   type step = (address, address, address, mutez)
 
-  function mk_step (source : address) (sender : address) (self : address) (amount : mutez) : step = (source, sender, self, amount)
+  function mk_step (source : address) (sender : address) (self : address) (amount : mutez) : step =
+    (source, sender, self, amount)
 
   function source (st : step) : address =
     match st with x, _, _, _ -> x end
@@ -36,9 +101,5 @@ module Michelson
     match st with _, _, _, x -> x end
 
   predicate st_wf (st : step) =
-    st.amount >= 0
-
-  function transfer (l : map address mutez) (src : address) (dst : address) (amt : mutez) : map address mutez =
-    let l' = l[src <- l[src] - amt] in
-    l'[dst <- l'[dst] + amt]
+    st.amount.mutez_v >= 0
 end

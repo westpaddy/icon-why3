@@ -22,7 +22,7 @@ predicate fa_param_wf (p : (or (address, address, nat) address)) =
   | Left (_, _, n) -> n >= 0
   | Right _ -> true
   end
-  
+
 predicate fa_param (p : param) =
   match p with
   | Fa_param p -> fa_param_wf p
