@@ -3,7 +3,7 @@ scope Unknown
   predicate pre (c : ctx) = true
 
   predicate post (c : ctx) (c' : ctx) =
-    c.boomerang_balance.mutez_v = c'.boomerang_balance.mutez_v
+    Mutez.(eq c.boomerang_balance c'.boomerang_balance)
 
 end
 
@@ -15,14 +15,14 @@ scope Boomerang
 
   predicate spec (st : step) (p : unit) (s : unit) (ops : list operation) (s' : unit) =
     s = s' /\
-    (st.amount.mutez_v = 0 -> ops = Nil) /\
-    (st.amount.mutez_v > 0 -> ops = Cons (Xfer (PUnit ()) st.amount st.sender) Nil)
+    (Mutez.(eq st.amount (mk 0)) -> ops = Nil) /\
+    (Mutez.(lt (mk 0) st.amount) -> ops = Cons (Xfer (PUnit ()) st.amount st.sender) Nil)
 
   let upper_ops = 1
 
   predicate pre (c : ctx) = true
 
   predicate post (st : step) (p : unit) (c : ctx) (c' : ctx) =
-    c.boomerang_balance.mutez_v = c'.boomerang_balance.mutez_v
+    Mutez.(eq c.boomerang_balance c'.boomerang_balance)
 
 end

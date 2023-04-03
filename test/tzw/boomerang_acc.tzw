@@ -3,8 +3,8 @@ scope Unknown
   predicate pre (c : ctx) = true
 
   predicate post (c : ctx) (c' : ctx) =
-    c.boomerang_store.mutez_v <= c'.boomerang_store.mutez_v /\
-    c.boomerang_balance.mutez_v = c'.boomerang_balance.mutez_v
+    Mutez.(le c.boomerang_store c'.boomerang_store) /\
+    Mutez.(eq c.boomerang_balance c'.boomerang_balance)
 
 end
 
@@ -15,9 +15,9 @@ scope Boomerang
   type store = mutez
 
   predicate spec (st : step) (p : unit) (s : mutez) (ops : list operation) (s' : mutez) =
-    mutez_eq (mutez_add s st.amount) s' /\
-    (st.amount.mutez_v = 0 -> ops = Nil) /\
-    (st.amount.mutez_v > 0 -> ops = Cons (Xfer (PUnit ()) st.amount st.sender) Nil)
+    Mutez.(eq (add s st.amount) s') /\
+    (Mutez.(eq st.amount (mk 0)) -> ops = Nil) /\
+    (Mutez.(lt (mk 0) st.amount) -> ops = Cons (Xfer (PUnit ()) st.amount st.sender) Nil)
 
   let upper_ops = 1
 

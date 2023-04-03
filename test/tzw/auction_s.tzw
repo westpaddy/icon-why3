@@ -2,11 +2,11 @@ scope WhyML
 
   function sum_of : map address mutez -> mutez
 
-  axiom SumE : sum_of (const (mk_mutez 0)) = mk_mutez 0
+  axiom SumE : Mutez.(eq (sum_of (const (mk 0))) (mk 0))
 
-  axiom SumI : forall m k v. (sum_of m[k <- v]).mutez_v = (sum_of m).mutez_v - m[k].mutez_v + v.mutez_v
+  axiom SumI : forall m k v. Mutez.(eq (sum_of m[k <- v]) (add (sub (sum_of m) m[k]) v))
 
-  axiom SumN : forall m k. mutez_le m[k] (sum_of m)
+  axiom SumN : forall m k. Mutez.(le m[k] (sum_of m))
 
 end
 
@@ -15,9 +15,9 @@ scope Unknown
   predicate pre (c : ctx) =
     let (beneficiary, (highest_bidder, (highest_bid, (ended, pending_returns)))) = c.auction_store in
     beneficiary <> highest_bidder /\
-    pending_returns[beneficiary].mutez_v = 0 /\
-    (not ended -> c.auction_balance.mutez_v >= highest_bid.mutez_v + (sum_of pending_returns).mutez_v) /\
-    (ended -> c.auction_balance.mutez_v >= (sum_of pending_returns).mutez_v)
+    Mutez.(eq pending_returns[beneficiary] (mk 0)) /\
+    (not ended -> Mutez.(le (add highest_bid (sum_of pending_returns)) c.auction_balance)) /\
+    (ended -> Mutez.(le (sum_of pending_returns) c.auction_balance))
 
   predicate post (c : ctx) (c' : ctx) =
     let (beneficiary, (highest_bidder, (highest_bid, (ended, pending_returns)))) = c.auction_store in
@@ -25,9 +25,9 @@ scope Unknown
     beneficiary = beneficiary' /\
     beneficiary' <> highest_bidder' /\
     (ended -> ended') /\
-    pending_returns'[beneficiary'].mutez_v = 0 /\
-    (not ended' -> c'.auction_balance.mutez_v >= highest_bid'.mutez_v + (sum_of pending_returns').mutez_v) /\
-    (ended' -> c'.auction_balance.mutez_v >= (sum_of pending_returns').mutez_v)
+    Mutez.(eq pending_returns'[beneficiary'] (mk 0)) /\
+    (not ended' -> Mutez.(le (add highest_bid' (sum_of pending_returns')) c'.auction_balance)) /\
+    (ended' -> Mutez.(le (sum_of pending_returns') c'.auction_balance))
 
 end
 
@@ -42,19 +42,19 @@ scope Auction
     match p with
     | Left () -> (* bid *)
         (not ended /\
-        st.amount.mutez_v > highest_bid.mutez_v /\
+        Mutez.(lt highest_bid st.amount) /\
         st.sender <> beneficiary) /\
-        let pending_returns = pending_returns[highest_bidder <- mutez_add pending_returns[highest_bidder] highest_bid] in
+        let pending_returns = pending_returns[highest_bidder <- Mutez.(add pending_returns[highest_bidder] highest_bid)] in
         s' = (beneficiary, (st.sender, (st.amount, (ended, pending_returns)))) /\
         ops = Nil
     | Right (Left ()) -> (* withdraw *)
-        (st.amount.mutez_v > 0) /\
+        Mutez.(lt (mk 0) st.amount) /\
         let pending_amount = pending_returns[st.sender] in
-        let pending_returns = pending_returns[st.sender <- mk_mutez 0] in
+        let pending_returns = pending_returns[st.sender <- Mutez.mk 0] in
         s' = (beneficiary, (highest_bidder, (highest_bid, (ended, pending_returns)))) /\
         ops = Cons (Xfer (PUnit ()) pending_amount st.sender) Nil
     | Right (Right ()) -> (* endAuction *)
-        (not ended /\ st.amount.mutez_v > 0) /\
+        (not ended /\ Mutez.(lt (mk 0) st.amount)) /\
         s' = (beneficiary, (highest_bidder, (highest_bid, (true, pending_returns)))) /\
         ops = Cons (Xfer (PUnit ()) highest_bid beneficiary) Nil
     end

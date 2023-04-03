@@ -327,11 +327,11 @@ module Generator (D : Desc) = struct
 
   let incr_balance_of (c : contract) (ctx : expr) (amt : expr) : expr =
     update_balance_of c ctx
-    @@ eapp (qid @@ ident "mutez_add") [ balance_of c ctx; amt ]
+    @@ eapp (qualid [ "Mutez"; "add" ]) [ balance_of c ctx; amt ]
 
   let decr_balance_of (c : contract) (ctx : expr) (amt : expr) : expr =
     update_balance_of c ctx
-    @@ eapp (qid @@ ident "mutez_sub") [ balance_of c ctx; amt ]
+    @@ eapp (qualid [ "Mutez"; "sub" ]) [ balance_of c ctx; amt ]
 
   let call_func_of (c : contract) (st : expr) (gp : expr) (ctx : expr) : expr =
     wrap_extract_param_of c gp @@ fun p ->
@@ -524,7 +524,7 @@ module Generator (D : Desc) = struct
               wrap_assume ~assumption:(sort_wf Sort.S_mutez amt)
               @@ E.mk_if
                    (eapp
-                      (qid @@ ident "mutez_lt")
+                      (qualid [ "Mutez"; "lt" ])
                       [ balance_of contract ctx; amt ])
                    (E.mk_raise insufficient_mutez_ident)
               @@ let* ctx = decr_balance_of contract ctx amt in

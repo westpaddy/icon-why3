@@ -9,73 +9,96 @@ module Michelson
   exception Insufficient_mutez
   exception Terminate
 
-  type nat = { nat_v : int } invariant { nat_v >= 0 }
+  scope Nat
 
-  let function mk_nat (n : int) : nat
-    requires { n >= 0 }
-    ensures { result.nat_v = n }
-    =
-    { nat_v = n }
-(*
-  let function nat_add (a : nat) (b : nat) : nat
-    ensures { result.nat_v = a.nat_v + b.nat_v }
-    =
-    { nat_v = a.nat_v + b.nat_v }
+    type t = { v : int } invariant { v >= 0 }
 
-  let function nat_sub (a : nat) (b : nat) : nat
-    requires { a.nat_v >= b.nat_v }
-    ensures { result.nat_v = a.nat_v - b.nat_v }
-    =
-    { nat_v = a.nat_v - b.nat_v }
+    let function mk (n : int) : t
+      requires { n >= 0 }
+      ensures { result.v = n }
+      =
+      { v = n }
 
-  let function nat_eq (a : nat) (b : nat) : bool
-    ensures { result <-> a.nat_v = b.nat_v }
-    =
-    a.nat_v = b.nat_v
+    let function add (a : t) (b : t) : t
+      ensures { result.v = a.v + b.v }
+      =
+      { v = a.v + b.v }
 
-  let function nat_lt (a : nat) (b : nat) : bool
-    ensures { result <-> a.nat_v < b.nat_v }
-    =
-    a.nat_v < b.nat_v
+    let function sub (a : t) (b : t) : t
+      requires { a.v >= b.v }
+      ensures { result.v = a.v - b.v }
+      =
+      { v = a.v - b.v }
 
-  let function nat_le (a : nat) (b : nat) : bool
-    ensures { result <-> a.nat_v <= b.nat_v }
-    =
-    a.nat_v <= b.nat_v
-*)
-  type mutez = { mutez_v : int } invariant { mutez_v >= 0 }
+    let function mul (a : t) (b : t) : t
+      ensures { result.v = a.v * b.v }
+      =
+      { v = a.v * b.v }
 
-  let function mk_mutez (n : int) : mutez
-    requires { n >= 0 }
-    ensures { result.mutez_v = n }
-    =
-    { mutez_v = n }
+    let function div (a : t) (b : t) : t
+      requires { b.v <> 0 }
+      ensures { result.v = div a.v b.v }
+      =
+      { v = div a.v b.v }
 
-  let function mutez_add (a : mutez) (b : mutez) : mutez
-    ensures { result.mutez_v = a.mutez_v + b.mutez_v }
-    =
-    { mutez_v = a.mutez_v + b.mutez_v }
+    let function eq (a : t) (b : t) : bool
+      ensures { result <-> a.v = b.v }
+      =
+      a.v = b.v
 
-  let function mutez_sub (a : mutez) (b : mutez) : mutez
-    requires { a.mutez_v >= b.mutez_v }
-    ensures { result.mutez_v = a.mutez_v - b.mutez_v }
-    =
-    { mutez_v = a.mutez_v - b.mutez_v }
+    let function lt (a : t) (b : t) : bool
+      ensures { result <-> a.v < b.v }
+      =
+      a.v < b.v
 
-  let function mutez_eq (a : mutez) (b : mutez) : bool
-    ensures { result <-> a.mutez_v = b.mutez_v }
-    =
-    a.mutez_v = b.mutez_v
+    let function le (a : t) (b : t) : bool
+      ensures { result <-> a.v <= b.v }
+      =
+      a.v <= b.v
 
-  let function mutez_lt (a : mutez) (b : mutez) : bool
-    ensures { result <-> a.mutez_v < b.mutez_v }
-    =
-    a.mutez_v < b.mutez_v
+  end
 
-  let function mutez_le (a : mutez) (b : mutez) : bool
-    ensures { result <-> a.mutez_v <= b.mutez_v }
-    =
-    a.mutez_v <= b.mutez_v
+  scope Mutez
+
+    type t = { v : int } invariant { v >= 0 }
+
+    let function mk (n : int) : t
+      requires { n >= 0 }
+      ensures { result.v = n }
+      =
+      { v = n }
+
+    let function add (a : t) (b : t) : t
+      ensures { result.v = a.v + b.v }
+      =
+      { v = a.v + b.v }
+
+    let function sub (a : t) (b : t) : t
+      requires { a.v >= b.v }
+      ensures { result.v = a.v - b.v }
+      =
+      { v = a.v - b.v }
+
+    let function eq (a : t) (b : t) : bool
+      ensures { result <-> a.v = b.v }
+      =
+      a.v = b.v
+
+    let function lt (a : t) (b : t) : bool
+      ensures { result <-> a.v < b.v }
+      =
+      a.v < b.v
+
+    let function le (a : t) (b : t) : bool
+      ensures { result <-> a.v <= b.v }
+      =
+      a.v <= b.v
+
+  end
+
+  type nat = Nat.t
+
+  type mutez = Mutez.t
 
   type address = int
 
@@ -83,9 +106,9 @@ module Michelson
 
   type or 'a 'b = Left 'a | Right 'b
 
-  type step = (address, address, address, mutez)
+  type step = (address, address, address, Mutez.t)
 
-  function mk_step (source : address) (sender : address) (self : address) (amount : mutez) : step =
+  function mk_step (source : address) (sender : address) (self : address) (amount : Mutez.t) : step =
     (source, sender, self, amount)
 
   function source (st : step) : address =
@@ -97,9 +120,9 @@ module Michelson
   function self (st : step) : address =
     match st with _, _, x, _ -> x end
 
-  function amount (st : step) : mutez =
+  function amount (st : step) : Mutez.t =
     match st with _, _, _, x -> x end
 
-  predicate st_wf (st : step) =
-    st.amount.mutez_v >= 0
+  predicate st_wf (st : step) = true
+
 end
