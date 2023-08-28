@@ -1,3 +1,4 @@
+module Regexp = Re
 open Why3
 open Ptree
 open Ptree_helpers
@@ -39,6 +40,7 @@ let gas_ident = ident "g"
 let terminate_ident = ident "Terminate"
 let insufficient_mutez_ident = ident "Insufficient_mutez"
 let unknown_ident = ident "unknown"
+let unknown_param_ctr_ident = ident "Punknown"
 let id_contract_of (c : contract) : ident = ident c.cn_name
 let id_gparam_of (c : contract) : ident = ident @@ c.cn_name ^ "_gparam"
 let id_param_wf_of (c : contract) : ident = ident @@ c.cn_name ^ "_param_wf"
@@ -93,11 +95,10 @@ let rec pty_of_sort (s : Sort.t) : Ptree.pty =
   | _ -> assert false
 
 let constr_of_sort (s : Sort.t) : string =
-  let open Re in
-  let re = compile @@ alt [ char ' '; char '('; char ')' ] in
+  let re = Regexp.(compile @@ alt [ char ' '; char '('; char ')' ]) in
   Sort.string_of_sort s |> String.capitalize_ascii
-  |> Re.replace re ~f:(fun g ->
-         match Re.Group.get g 0 with
+  |> Regexp.replace re ~f:(fun g ->
+         match Regexp.Group.get g 0 with
          | " " -> "_"
          | "(" -> "'0"
          | ")" -> "'1"
@@ -286,6 +287,8 @@ module Generator (D : Desc) = struct
     @@ Ematch
          ( gp,
            [
+             ( pat @@ Papp (qid unknown_param_ctr_ident, []),
+               body @@ E.mk_any (pty_of_sort c.cn_param_ty) );
              ( pat
                @@ Papp (qualid [ constr_of_sort c.cn_param_ty ], [ pat_var p ]),
                body @@ E.mk_var p );
@@ -407,6 +410,7 @@ module Generator (D : Desc) = struct
              @@ Ematch
                   ( E.var_of_param gp,
                     [
+                      (pat @@ Papp (qid unknown_param_ctr_ident, []), expr Etrue);
                       ( pat
                         @@ Papp
                              ( qualid [ constr_of_sort contract.cn_param_ty ],
@@ -493,8 +497,8 @@ module Generator (D : Desc) = struct
           ];
         sp_xpost =
           (if contract.cn_num_kont > 0 then
-           [ mk_xpost terminate_ident; mk_xpost insufficient_mutez_ident ]
-          else [ mk_xpost terminate_ident ]);
+             [ mk_xpost terminate_ident; mk_xpost insufficient_mutez_ident ]
+           else [ mk_xpost terminate_ident ]);
         sp_variant = gas_variant;
       }
     in
@@ -676,7 +680,8 @@ module Generator (D : Desc) = struct
           td_mut = false;
           td_inv = [];
           td_wit = None;
-          td_def = TDalgebraic d;
+          td_def =
+            TDalgebraic ((Loc.dummy_position, unknown_param_ctr_ident, []) :: d);
         };
       ]
 

@@ -2,11 +2,18 @@ open Why3
 
 let usage = "icon <file>"
 
+(* let () = *)
+(*   Arg.parse [] *)
+(*     (fun file -> *)
+(*       Format.printf "%a@." (Mlw_printer.pp_mlw_file ~attr:true) *)
+(*       @@ Gen_mlw.file @@ Translator.parse_file file) *)
+(*     usage *)
+
 let () =
   Arg.parse []
     (fun file ->
       Format.printf "%a@." (Mlw_printer.pp_mlw_file ~attr:true)
-      @@ Gen_mlw.file @@ Translator.parse_file file)
+      @@ Tzw.from_file file)
     usage
 
 (* let mlw_file = Gen_mlw.file @@ Translator.parse_file "test/dexter_c.mlw" *)

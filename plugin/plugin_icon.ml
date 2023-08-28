@@ -1,10 +1,13 @@
+module Regexp = Re
 open Why3
 
 let find_target (ds : Decl.decl list) : Ident.ident option =
   let is_tuple ty =
     match ty.Ty.ty_node with
     | Tyapp (s, _) ->
-        Re.(execp (compile (seq [ bos; alt [ str "tuple"; str "or" ] ])))
+        Regexp.(
+          execp
+            (compile (seq [ bos; alt [ str "tuple"; str "gparam"; str "or" ] ])))
           s.ts_name.id_string
     | _ -> false
   in
@@ -46,11 +49,7 @@ let () =
 
 let read_channel env _path file c =
   let f = Lexer.parse_mlw_file @@ Lexing.from_channel c in
-  let desc =
-    match Translator.from_tzw f with
-    | Ok l -> l
-    | Error e -> Loc.errorm "%s@." e
-  in
+  let desc = Error_monad.raise_error @@ Translator.from_tzw f in
   Typing.type_mlw_file env [] (file ^ ".mlw") @@ Gen_mlw.file desc
 
 let () =
