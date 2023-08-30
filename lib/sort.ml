@@ -15,6 +15,7 @@ type t =
   | S_unit
   | S_list of t
   | S_pair of t * t
+  | S_tuple of t list
   | S_option of t
   | S_or of t * t
   | S_set of t
@@ -58,6 +59,10 @@ let rec pp_sort fmt (ty : t) =
   | S_list ty -> fprintf fmt "(@[list@ %a@])" pp_sort ty
   | S_pair (ty1, ty2) ->
       fprintf fmt "(@[pair@ %a@ %a@])" pp_sort ty1 pp_sort ty2
+  | S_tuple tys ->
+      fprintf fmt "(@[%a@])"
+        (pp_print_list ~pp_sep:(fun fmt () -> pp_print_string fmt ",") pp_sort)
+        tys
   | S_option ty -> fprintf fmt "(@[option@ %a@])" pp_sort ty
   | S_or (ty1, ty2) -> fprintf fmt "(@[or@ %a@ %a@])" pp_sort ty1 pp_sort ty2
   | S_set ty -> fprintf fmt "(@[set@ %a@])" pp_sort ty
@@ -122,6 +127,7 @@ let replace_tyvar (ty : t) (x : tyvar) (ty' : t) : t =
     | S_lambda (ty1, ty2) -> S_lambda (aux ty1, aux ty2)
     | S_map (ty1, ty2) -> S_map (aux ty1, aux ty2)
     | S_big_map (ty1, ty2) -> S_big_map (aux ty1, aux ty2)
+    | S_tuple tys -> S_tuple (List.map aux tys)
   in
   aux ty
 
@@ -144,3 +150,5 @@ let rec ftv (ty : t) : Tyvars.t =
   | S_map (ty1, ty2)
   | S_big_map (ty1, ty2) ->
       Tyvars.union (ftv ty1) (ftv ty2)
+  | S_tuple tys ->
+      List.fold_left (fun s ty -> Tyvars.union s (ftv ty)) Tyvars.empty tys

@@ -73,6 +73,7 @@ let rec pty_of_sort (s : Sort.t) : Ptree.pty =
   | S_unit -> ty "unit"
   | S_list s -> PTtyapp (qualid [ "list" ], [ pty_of_sort s ])
   | S_pair (s1, s2) -> PTtuple [ pty_of_sort s1; pty_of_sort s2 ]
+  | S_tuple sl -> PTtuple (List.map pty_of_sort sl)
   | S_option s -> PTtyapp (qualid [ "option" ], [ pty_of_sort s ])
   | S_or (s1, s2) ->
       PTtyapp (qualid [ "or" ], [ pty_of_sort s1; pty_of_sort s2 ])
