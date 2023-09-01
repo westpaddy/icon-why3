@@ -48,6 +48,13 @@ module Option = struct
 
   let to_iresult (o : 'a option) ~(none : error) : 'a iresult =
     match o with Some v -> return v | None -> error none
+
+  let map_e (f : 'a -> 'b iresult) (o : 'a option) : 'b option iresult =
+    match o with
+    | None -> return None
+    | Some x ->
+        let* x = f x in
+        return @@ Some x
 end
 
 module List = struct
@@ -69,4 +76,7 @@ module List = struct
         [] l
     in
     return @@ List.rev l
+
+  let iter_e (f : 'a -> unit iresult) (l : 'a list) : unit iresult =
+    fold_left_e (fun () x -> f x) () l
 end

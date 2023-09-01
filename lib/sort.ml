@@ -3,9 +3,6 @@
 type tyvar = string
 
 type t =
-  (* internally used types *)
-  | S_var of tyvar
-  | S_exception
   (* core data types *)
   | S_string
   | S_nat
@@ -48,8 +45,6 @@ let compare (t1 : t) (t2 : t) = compare t1 t2
 let rec pp_sort fmt (ty : t) =
   let open Format in
   match ty with
-  | S_var v -> fprintf fmt "'%s" v
-  | S_exception -> fprintf fmt "exception"
   | S_string -> fprintf fmt "string"
   | S_nat -> fprintf fmt "nat"
   | S_int -> fprintf fmt "int"
@@ -95,60 +90,108 @@ let string_of_sort (ty : t) : string =
       pp_sort ppf ty)
     ty
 
-(* let open Format in
- * let buf = Buffer.create 512 in
- * let ppf = formatter_of_buffer buf in
- * pp_set_formatter_out_functions
- *   ppf
- *   {
- *     (pp_get_formatter_out_functions ppf ()) with
- *     out_newline = ignore;
- *     out_indent = ignore;
- *   } ;
- * fprintf ppf "@[%a@]@?" pp_sort ty ;
- * Buffer.contents buf *)
+open Error_monad
+open Why3
+open Ptree
+open Ptree_helpers
 
-(** [replace_tyvar ty x ty'] replaces the every occurrence of the type
-   variable [x] in the sort [ty] with the type [ty']. *)
-let replace_tyvar (ty : t) (x : tyvar) (ty' : t) : t =
-  let rec aux ty =
-    match ty with
-    | S_var z when x = z -> ty'
-    | S_var _ | S_unit | S_bool | S_int | S_nat | S_string | S_chain_id
-    | S_bytes | S_mutez | S_key_hash | S_key | S_signature | S_timestamp
-    | S_address | S_operation | S_exception ->
-        ty
-    | S_option ty -> S_option (aux ty)
-    | S_list ty -> S_list (aux ty)
-    | S_set ty -> S_set (aux ty)
-    | S_contract ty -> S_contract (aux ty)
-    | S_or (ty1, ty2) -> S_or (aux ty1, aux ty2)
-    | S_pair (ty1, ty2) -> S_pair (aux ty1, aux ty2)
-    | S_lambda (ty1, ty2) -> S_lambda (aux ty1, aux ty2)
-    | S_map (ty1, ty2) -> S_map (aux ty1, aux ty2)
-    | S_big_map (ty1, ty2) -> S_big_map (aux ty1, aux ty2)
-    | S_tuple tys -> S_tuple (List.map aux tys)
+(** Parse a [Why3.Ptree.pty] value as a Michelson type and convert into a [Sort.t] value. *)
+let rec sort_of_pty (pty : pty) : t iresult =
+  let elt1 l =
+    match l with
+    | [ pty ] -> sort_of_pty pty
+    | _ -> error_with "expected 1 parameter"
   in
-  aux ty
+  let elt2 l =
+    match l with
+    | [ pty1; pty2 ] ->
+        let* s1 = sort_of_pty pty1 in
+        let* s2 = sort_of_pty pty2 in
+        return (s1, s2)
+    | _ -> error_with "expected 2 parameter"
+  in
+  match pty with
+  | PTtyapp (Qident id, pl) -> (
+      match id.id_str with
+      | "string" -> return S_string
+      | "nat" -> return S_nat
+      | "int" -> return S_int
+      | "bytes" -> return S_bytes
+      | "bool" -> return S_bool
+      | "unit" -> return S_unit
+      | "timestamp" -> return S_timestamp
+      | "mutez" -> return S_mutez
+      | "address" -> return S_address
+      | "key" -> return S_key
+      | "key_hash" -> return S_key_hash
+      | "signature" -> return S_signature
+      | "chain_id" -> return S_chain_id
+      | "operation" -> return S_operation
+      | "list" ->
+          let* s = elt1 pl in
+          return @@ S_list s
+      | "option" ->
+          let* s = elt1 pl in
+          return @@ S_option s
+      | "or" ->
+          let* s1, s2 = elt2 pl in
+          return @@ S_or (s1, s2)
+      | "set" ->
+          let* s = elt1 pl in
+          return @@ S_set s
+      | "map" ->
+          let* s1, s2 = elt2 pl in
+          return @@ S_map (s1, s2)
+      | "big_map" ->
+          let* s1, s2 = elt2 pl in
+          return @@ S_big_map (s1, s2)
+      | "lambda" ->
+          let* s1, s2 = elt2 pl in
+          return @@ S_lambda (s1, s2)
+      | "contract" ->
+          let* s = elt1 pl in
+          return @@ S_contract s
+      | s -> error_with "unknown sort %s" s)
+  | PTtuple [] -> return @@ S_unit
+  | PTtuple [ pty ] -> sort_of_pty pty
+  | PTtuple ([ _; _ ] as pl) ->
+      let* s1, s2 = elt2 pl in
+      return @@ S_pair (s1, s2)
+  | PTtuple ptys ->
+      let* sl = List.map_e sort_of_pty ptys in
+      return @@ S_tuple sl
+  | PTparen pty -> sort_of_pty pty
+  | _ -> error_with "unknown sort %a" (Mlw_printer.pp_pty ~attr:true).closed pty
 
-let subst_sort (s : (string * t) list) (ty : t) : t =
-  List.fold_left (fun ty (x, ty') -> replace_tyvar ty x ty') ty s
-
-module Tyvars = Set.Make (String)
-
-let rec ftv (ty : t) : Tyvars.t =
-  match ty with
-  | S_var x -> Tyvars.singleton x
-  | S_unit | S_bool | S_int | S_nat | S_string | S_chain_id | S_bytes | S_mutez
-  | S_key_hash | S_key | S_signature | S_timestamp | S_address | S_operation
-  | S_exception ->
-      Tyvars.empty
-  | S_option ty | S_list ty | S_set ty | S_contract ty -> ftv ty
-  | S_or (ty1, ty2)
-  | S_pair (ty1, ty2)
-  | S_lambda (ty1, ty2)
-  | S_map (ty1, ty2)
-  | S_big_map (ty1, ty2) ->
-      Tyvars.union (ftv ty1) (ftv ty2)
-  | S_tuple tys ->
-      List.fold_left (fun s ty -> Tyvars.union s (ftv ty)) Tyvars.empty tys
+(** Convert [t] value into [Why3.Ptree.pty] value.  *)
+let rec pty_of_sort (s : t) : Ptree.pty =
+  let ty s = PTtyapp (qualid [ s ], []) in
+  match s with
+  | S_string -> ty "string"
+  | S_nat -> ty "nat"
+  | S_int -> ty "int"
+  | S_bytes -> ty "bytes"
+  | S_bool -> ty "bool"
+  | S_unit -> ty "unit"
+  | S_list s -> PTtyapp (qualid [ "list" ], [ pty_of_sort s ])
+  | S_pair (s1, s2) -> PTtuple [ pty_of_sort s1; pty_of_sort s2 ]
+  | S_tuple sl -> PTtuple (List.map pty_of_sort sl)
+  | S_option s -> PTtyapp (qualid [ "option" ], [ pty_of_sort s ])
+  | S_or (s1, s2) ->
+      PTtyapp (qualid [ "or" ], [ pty_of_sort s1; pty_of_sort s2 ])
+  | S_set s -> PTtyapp (qualid [ "set" ], [ pty_of_sort s ])
+  | S_map (s1, s2) ->
+      PTtyapp (qualid [ "map" ], [ pty_of_sort s1; pty_of_sort s2 ])
+  | S_big_map (s1, s2) ->
+      PTtyapp (qualid [ "map" ], [ pty_of_sort s1; pty_of_sort s2 ])
+  | S_lambda (s1, s2) ->
+      PTtyapp (qualid [ "lambda" ], [ pty_of_sort s1; pty_of_sort s2 ])
+  | S_timestamp -> ty "timestamp"
+  | S_mutez -> ty "mutez"
+  | S_address -> ty "address"
+  | S_contract s -> PTtyapp (qualid [ "contract" ], [ pty_of_sort s ])
+  | S_operation -> ty "operation"
+  | S_key -> ty "key"
+  | S_key_hash -> ty "key_hash"
+  | S_signature -> ty "signature"
+  | S_chain_id -> ty "chain_id"

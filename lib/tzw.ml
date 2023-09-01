@@ -3,80 +3,13 @@ open Why3
 open Ptree
 open Error_monad
 
-let rec sort_of_pty (pty : pty) : Sort.t iresult =
-  let elt1 l =
-    match l with
-    | [ pty ] -> sort_of_pty pty
-    | _ -> error_with "expected 1 parameter"
-  in
-  let elt2 l =
-    match l with
-    | [ pty1; pty2 ] ->
-        let* s1 = sort_of_pty pty1 in
-        let* s2 = sort_of_pty pty2 in
-        return (s1, s2)
-    | _ -> error_with "expected 2 parameter"
-  in
+let is_id_type (pty : Ptree.pty) (id : ident) : bool =
   match pty with
-  | PTtyapp (Qident id, pl) -> (
-      match id.id_str with
-      | "string" -> return Sort.S_string
-      | "nat" -> return Sort.S_nat
-      | "int" -> return Sort.S_int
-      | "bytes" -> return Sort.S_bytes
-      | "bool" -> return Sort.S_bool
-      | "unit" -> return Sort.S_unit
-      | "timestamp" -> return Sort.S_timestamp
-      | "mutez" -> return Sort.S_mutez
-      | "address" -> return Sort.S_address
-      | "key" -> return Sort.S_key
-      | "key_hash" -> return Sort.S_key_hash
-      | "signature" -> return Sort.S_signature
-      | "chain_id" -> return Sort.S_chain_id
-      | "operation" -> return Sort.S_operation
-      | "list" ->
-          let* s = elt1 pl in
-          return @@ Sort.S_list s
-      | "option" ->
-          let* s = elt1 pl in
-          return @@ Sort.S_option s
-      | "or" ->
-          let* s1, s2 = elt2 pl in
-          return @@ Sort.S_or (s1, s2)
-      | "set" ->
-          let* s = elt1 pl in
-          return @@ Sort.S_set s
-      | "map" ->
-          let* s1, s2 = elt2 pl in
-          return @@ Sort.S_map (s1, s2)
-      | "big_map" ->
-          let* s1, s2 = elt2 pl in
-          return @@ Sort.S_big_map (s1, s2)
-      | "lambda" ->
-          let* s1, s2 = elt2 pl in
-          return @@ Sort.S_lambda (s1, s2)
-      | "contract" ->
-          let* s = elt1 pl in
-          return @@ Sort.S_contract s
-      | s -> error_with "unknown sort %s" s)
-  | PTtuple [] -> return @@ Sort.S_unit
-  | PTtuple [ pty ] -> sort_of_pty pty
-  | PTtuple ([ _; _ ] as pl) ->
-      let* s1, s2 = elt2 pl in
-      return @@ Sort.S_pair (s1, s2)
-  | PTtuple ptys ->
-      let* sl = List.map_e sort_of_pty ptys in
-      return @@ Sort.S_tuple sl
-  | PTparen pty -> sort_of_pty pty
-  | _ -> error_with "unknown sort %a" (Mlw_printer.pp_pty ~attr:true).closed pty
-
-let is_id_type (pty : Ptree.pty) (id : string) : bool =
-  match pty with
-  | PTtyapp (Qident { id_str; _ }, []) when id_str = id -> true
+  | PTtyapp (Qident { id_str; _ }, []) when id_str = id.id_str -> true
   | _ -> false
 
-let is_step_type (pty : Ptree.pty) : bool = is_id_type pty "step"
-let is_storage_type (pty : Ptree.pty) : bool = is_id_type pty "storage"
+let is_step_type (pty : Ptree.pty) : bool = is_id_type pty Id.step_ty
+let is_storage_type (pty : Ptree.pty) : bool = is_id_type pty Id.storage_ty
 
 type entrypoint_params = {
   epp_step : Ptree.param;
@@ -87,9 +20,19 @@ type entrypoint_params = {
 }
 
 type entrypoint = {
+  ep_loc : Loc.position;
   ep_name : Ptree.ident;
   ep_params : entrypoint_params;
   ep_body : Ptree.term;
+}
+
+type contract = {
+  c_name : Ptree.ident;
+  c_store_ty : Ptree.type_decl;
+  c_entrypoints : entrypoint list;
+  c_num_kont : int;
+  c_pre : Ptree.logic_decl;
+  c_post : Ptree.logic_decl;
 }
 
 let parse_entrypoint_params (params : Ptree.param list) =
@@ -134,7 +77,7 @@ let parse_entrypoint_params (params : Ptree.param list) =
       ~err:
         (error_of_fmt ~loc:(param_loc op)
            "invalid format: list operation type is expected")
-    @@ sort_of_pty @@ param_pty op
+    @@ Sort.sort_of_pty @@ param_pty op
   in
   let* () =
     error_unless
@@ -151,7 +94,7 @@ let parse_entrypoint_params (params : Ptree.param list) =
             ~err:
               (error_of_fmt ~loc:(param_loc p)
                  "invalid format: Michelson type is expected")
-          @@ sort_of_pty @@ param_pty p
+          @@ Sort.sort_of_pty @@ param_pty p
         in
         return ())
       () params
@@ -166,12 +109,18 @@ let parse_entrypoint_params (params : Ptree.param list) =
     }
 
 let parse_entrypoint_pred (ld : Ptree.logic_decl) : entrypoint iresult =
+  let ep_loc = ld.ld_loc in
   let ep_name = ld.ld_ident in
   let* ep_params = parse_entrypoint_params ld.ld_params in
-  let* ep_body =
-    Option.to_iresult ld.ld_def ~none:(error_of_fmt "spec body is missing")
+  let* () =
+    error_unless (ld.ld_type = None)
+      ~err:(error_of_fmt ~loc:ep_loc "invalid format: predicate is expected")
   in
-  return { ep_name; ep_params; ep_body }
+  let* ep_body =
+    Option.to_iresult ld.ld_def
+      ~none:(error_of_fmt ~loc:ep_loc "invalid format: spec body is missing")
+  in
+  return { ep_loc; ep_name; ep_params; ep_body }
 
 let parse_entrypoint_scope (lds : Ptree.decl list) =
   List.fold_left_e
@@ -180,17 +129,10 @@ let parse_entrypoint_scope (lds : Ptree.decl list) =
       | Ptree.Dlogic [ ld ] ->
           let* ep = parse_entrypoint_pred ld in
           return @@ (ep :: tl)
-      | _ -> error_with "unexpected decl in Spec scope")
+      | _ -> error_with "invalid format: unexpected decl in Spec scope")
     [] lds
 
-type contract = {
-  c_name : Ptree.ident;
-  c_store_ty : Ptree.type_decl;
-  c_entrypoints : entrypoint list;
-  c_num_kont : int;
-}
-
-let parse_storage_type (td : Ptree.type_decl) =
+let check_storage_type_decl (td : Ptree.type_decl) : Ptree.type_decl iresult =
   let* () =
     error_unless (td.td_params = [])
       ~err:(error_of_fmt "storage type cannot have type parameters")
@@ -204,10 +146,23 @@ let parse_storage_type (td : Ptree.type_decl) =
   match td.td_def with
   | TDalias pty ->
       let* _ =
-        trace ~err:(error_of_fmt ~loc:td.td_loc "alias") @@ sort_of_pty pty
+        trace ~err:(error_of_fmt ~loc:td.td_loc "Michelson type is expected")
+        @@ Sort.sort_of_pty pty
       in
       return td
-  | TDrecord _ -> return td
+  | TDrecord flds ->
+      let* () =
+        List.iter_e
+          (fun f ->
+            let* _ =
+              trace
+                ~err:(error_of_fmt ~loc:f.f_loc "Michelson type is expected")
+              @@ Sort.sort_of_pty f.f_pty
+            in
+            return ())
+          flds
+      in
+      return td
   | _ ->
       error_with
         "storage type must be a Michelson type or a record type of which \
@@ -222,32 +177,45 @@ let parse_upper_ops (e : Ptree.expr) =
   | _ -> error_with "upper_ops_len shall be an integer constant"
 
 let parse_contract loc id ds =
-  let* ostore, okont, oeps =
+  let* ostore, okont, oeps, opre, opost =
     List.fold_left_e
-      (fun (ostore, okont, oeps) -> function
-        | Ptree.Dtype [ td ] when td.td_ident.id_str = "storage" ->
+      (fun (ostore, okont, oeps, opre, opost) -> function
+        | Ptree.Dtype [ td ] when td.td_ident.id_str = Id.storage_ty.id_str ->
             let* () =
               error_unless (ostore = None)
                 ~err:(error_of_fmt "multiple declaration of storage type")
             in
-            let* store = parse_storage_type td in
-            return (Some store, okont, oeps)
-        | Dlet (id, _, _, e) when id.id_str = "upper_ops" ->
+            let* store = check_storage_type_decl td in
+            return (Some store, okont, oeps, opre, opost)
+        | Dlet (id, _, _, e) when id.id_str = Id.upper_ops.id_str ->
             let* () =
               error_unless (okont = None)
                 ~err:(error_of_fmt "multiple declaration of upper_ops")
             in
             let* kont = parse_upper_ops e in
-            return (ostore, Some kont, oeps)
-        | Dscope (_, _, id, dls) when id.id_str = "Spec" ->
+            return (ostore, Some kont, oeps, opre, opost)
+        | Dscope (loc, _, id, dls) when id.id_str = Id.spec_scope.id_str ->
             let* () =
               error_unless (oeps = None)
-                ~err:(error_of_fmt "multiple declaration of Spec")
+                ~err:(error_of_fmt ~loc "multiple declaration of Spec")
             in
             let* eps = parse_entrypoint_scope dls in
-            return (ostore, okont, Some eps)
+            return (ostore, okont, Some eps, opre, opost)
+        | Dlogic [ ld ] when ld.ld_ident.id_str = Id.pre.id_str ->
+            let* () =
+              error_unless (opre = None)
+                ~err:(error_of_fmt ~loc:ld.ld_loc "multiple declaration of pre")
+            in
+            return (ostore, okont, oeps, Some ld, opost)
+        | Dlogic [ ld ] when ld.ld_ident.id_str = Id.post.id_str ->
+            let* () =
+              error_unless (opost = None)
+                ~err:(error_of_fmt ~loc:ld.ld_loc "multiple declaration of pre")
+            in
+            return (ostore, okont, oeps, opre, Some ld)
         | _ -> error_with "unexpected decl")
-      (None, None, None) ds
+      (None, None, None, None, None)
+      ds
   in
   let* c_store_ty =
     Option.to_iresult ostore ~none:(error_of_fmt ~loc "storage is missing")
@@ -258,7 +226,13 @@ let parse_contract loc id ds =
   let* c_entrypoints =
     Option.to_iresult oeps ~none:(error_of_fmt ~loc "Spec is missing")
   in
-  return { c_name = id; c_store_ty; c_entrypoints; c_num_kont }
+  let* c_pre =
+    Option.to_iresult opre ~none:(error_of_fmt ~loc "pre is missing")
+  in
+  let* c_post =
+    Option.to_iresult opost ~none:(error_of_fmt ~loc "post is missing")
+  in
+  return { c_name = id; c_store_ty; c_entrypoints; c_num_kont; c_pre; c_post }
 
 let parse_unknown (ds : Ptree.decl list) =
   let parse_entrypoint_type (ds : Ptree.decl list) =
@@ -269,7 +243,7 @@ let parse_unknown (ds : Ptree.decl list) =
               List.map_e
                 (fun (loc, _, _, pty) ->
                   trace ~err:(error_of_fmt ~loc "Michelson type is expected")
-                  @@ sort_of_pty pty)
+                  @@ Sort.sort_of_pty pty)
                 ld.ld_params
             in
             return @@ StringMap.add ld.ld_ident.id_str s m
@@ -305,6 +279,18 @@ let parse_mlw (mlw : Ptree.mlw_file) =
           StringMap.empty ds
     | _ -> error_with "invalid format: top level must consist of scopes"
   in
+  let preambles =
+    match StringMap.find_opt Id.preambles_scope.id_str scopes with
+    | None -> []
+    | Some (_, _, ds) -> ds
+  in
+  let scopes = StringMap.remove Id.preambles_scope.id_str scopes in
+  let postambles =
+    match StringMap.find_opt Id.postambles_scope.id_str scopes with
+    | None -> []
+    | Some (_, _, ds) -> ds
+  in
+  let scopes = StringMap.remove Id.postambles_scope.id_str scopes in
   let* _loc, _id, ds =
     StringMap.find_opt "Unknown" scopes
     |> Option.to_iresult ~none:(error_of_fmt "Unknown scope must be declared")
@@ -320,7 +306,7 @@ let parse_mlw (mlw : Ptree.mlw_file) =
             (fun m ep ->
               let* s =
                 List.map_e
-                  (fun (_, _, _, pty) -> sort_of_pty pty)
+                  (fun (_, _, _, pty) -> Sort.sort_of_pty pty)
                   ep.ep_params.epp_param
               in
               return @@ StringMap.add ep.ep_name.id_str s m)
@@ -330,22 +316,23 @@ let parse_mlw (mlw : Ptree.mlw_file) =
       scopes
       ([], StringMap.singleton "Unknown" ep)
   in
-  return (cs, epp)
+  return (preambles, postambles, cs, epp)
 
-let gen_gparam_cstr (ep : string) (s : Sort.t list) =
+(** Generate the global parameter constructor name for entrypoint [ep] of type [s]. *)
+let gen_gparam_cstr (ep : string) (s : Sort.t list) : string =
   let re = Regexp.(compile @@ alt [ char ' '; char '('; char ')'; char ',' ]) in
   List.map
     (fun s ->
-      Sort.string_of_sort s |> String.capitalize_ascii
+      Sort.string_of_sort s
       |> Regexp.replace re ~f:(fun g ->
              match Regexp.Group.get g 0 with
-             | " " -> "_"
-             | "(" -> "'0"
-             | ")" -> "'1"
-             | "," -> "'2"
+             | " " -> "0"
+             | "(" -> "1"
+             | ")" -> "2"
+             | "," -> "3"
              | _ -> assert false))
     s
-  |> String.concat "'3"
+  |> String.concat "4"
   |> Format.sprintf "Gp'0%s'0%s" ep
 
 let convert_gparam (epp : Sort.t list StringMap.t StringMap.t) (t : Ptree.term)
@@ -357,26 +344,31 @@ let convert_gparam (epp : Sort.t list StringMap.t StringMap.t) (t : Ptree.term)
         let cn =
           try StringMap.find cn_n epp
           with Not_found ->
-            failwith (Format.sprintf "%s is not declared" cn_n)
+            raise
+            @@ Loc.Located
+                 (id.id_loc, Failure (Format.sprintf "%s is not declared" cn_n))
         in
         let s =
           try StringMap.find ep_n cn
           with Not_found ->
-            failwith (Format.sprintf "%s doesn't have %s" cn_n ep_n)
+            raise
+            @@ Loc.Located
+                 ( id.id_loc,
+                   Failure (Format.sprintf "%s doesn't have %s" cn_n ep_n) )
         in
         { id with id_str = gen_gparam_cstr ep_n s }
     | _ -> id
   in
   let open Ptree_mapper in
   try return @@ apply_term t { default_mapper with ident = convert }
-  with Failure s -> error_with "%s" s
+  with Loc.Located (loc, Failure s) -> error_with ~loc "%s" s
 
 let convert_entrypoint (epp : Sort.t list StringMap.t StringMap.t)
     (ep : entrypoint) =
   let* body = convert_gparam epp ep.ep_body in
   return
     {
-      ld_loc = Loc.dummy_position;
+      ld_loc = ep.ep_loc;
       ld_ident = ep.ep_name;
       ld_params =
         ep.ep_params.epp_step :: ep.ep_params.epp_old_s :: ep.ep_params.epp_ops
@@ -408,7 +400,7 @@ let gen_spec (epp : Sort.t list StringMap.t) =
     ( Loc.dummy_position,
       Some (Ptree_helpers.ident "op"),
       false,
-      Gen_mlw.pty_of_sort Sort.(S_list S_operation) )
+      Sort.pty_of_sort Sort.(S_list S_operation) )
   in
   let s' : Ptree.param =
     ( Loc.dummy_position,
@@ -458,6 +450,41 @@ let gen_spec (epp : Sort.t list StringMap.t) =
   let ld_def = Some body in
   { ld_loc; ld_ident; ld_params; ld_type; ld_def }
 
+let gen_storage_wf td =
+  let sto : Ptree.param =
+    ( Loc.dummy_position,
+      Some (Ptree_helpers.ident "s"),
+      false,
+      PTtyapp (Ptree_helpers.qualid [ "storage" ], []) )
+  in
+  let* body =
+    match td.td_def with
+    | TDalias pty ->
+        let* s = Sort.sort_of_pty pty in
+        return @@ Gen_mlw.sort_wf s Gen_mlw.(E.mk_var @@ param_id sto)
+    | TDrecord flds ->
+        List.fold_left_e
+          (fun t f ->
+            let* s = Sort.sort_of_pty f.f_pty in
+            let p =
+              Gen_mlw.(
+                sort_wf s
+                @@ Ptree_helpers.eapp (qid f.f_ident)
+                     [ E.mk_var @@ param_id sto ])
+            in
+            return @@ Gen_mlw.T.mk_and p t)
+          (Ptree_helpers.term Ttrue) flds
+    | _ -> assert false
+  in
+  return
+    {
+      ld_loc = Loc.dummy_position;
+      ld_ident = Ptree_helpers.ident "storage_wf";
+      ld_params = [ sto ];
+      ld_type = None;
+      ld_def = Some body;
+    }
+
 let convert_contract (epp : Sort.t list StringMap.t StringMap.t) (c : contract)
     =
   let* eps =
@@ -467,6 +494,7 @@ let convert_contract (epp : Sort.t list StringMap.t StringMap.t) (c : contract)
         return @@ (Dlogic [ ep ] :: tl))
       [] c.c_entrypoints
   in
+  let* storage_wf = gen_storage_wf c.c_store_ty in
   return
   @@ Dscope
        ( Loc.dummy_position,
@@ -479,11 +507,12 @@ let convert_contract (epp : Sort.t list StringMap.t StringMap.t) (c : contract)
                  ld_loc = Loc.dummy_position;
                  ld_ident = Ptree_helpers.ident "addr";
                  ld_params = [];
-                 ld_type = Some (Gen_mlw.pty_of_sort Sort.S_address);
+                 ld_type = Some (Sort.pty_of_sort Sort.S_address);
                  ld_def = None;
                };
              ];
            Dtype [ c.c_store_ty ];
+           Dlogic [ storage_wf ];
            Dscope (Loc.dummy_position, false, Ptree_helpers.ident "Spec", eps);
            Dlogic [ gen_spec (StringMap.find c.c_name.id_str epp) ];
          ] )
@@ -505,7 +534,7 @@ let gen_gparam (epp : Sort.t list StringMap.t StringMap.t) =
                      Ptree_helpers.ident @@ gen_gparam_cstr en s,
                      List.map
                        (fun s ->
-                         (Loc.dummy_position, None, false, Gen_mlw.pty_of_sort s))
+                         (Loc.dummy_position, None, false, Sort.pty_of_sort s))
                        s )
                    cstrs))
            epp S.empty)
@@ -524,15 +553,67 @@ let gen_gparam (epp : Sort.t list StringMap.t StringMap.t) =
       };
     ]
 
-let convert_mlw (epp : Sort.t list StringMap.t StringMap.t) (cs : contract list)
-    =
+let convert_mlw (preambles : decl list) (postambles : decl list)
+    (epp : Sort.t list StringMap.t StringMap.t) (cs : contract list) =
   let* ds = List.map_e (convert_contract epp) cs in
-  return @@ Decls (gen_gparam epp :: ds)
+  let* invariants =
+    let* lds =
+      List.map_e
+        (fun c ->
+          let* pre_def = Option.map_e (convert_gparam epp) c.c_pre.ld_def in
+          let* post_def = Option.map_e (convert_gparam epp) c.c_post.ld_def in
+          return
+            [
+              Dlogic
+                [
+                  {
+                    c.c_pre with
+                    ld_ident =
+                      Ptree_helpers.ident @@ String.uncapitalize_ascii
+                      @@ c.c_name.id_str ^ "_pre";
+                    ld_def = pre_def;
+                  };
+                ];
+              Dlogic
+                [
+                  {
+                    c.c_post with
+                    ld_ident =
+                      Ptree_helpers.ident @@ String.uncapitalize_ascii
+                      @@ c.c_name.id_str ^ "_post";
+                    ld_def = post_def;
+                  };
+                ];
+            ])
+        cs
+    in
+    return @@ List.flatten lds
+  in
+  let open Gen_mlw in
+  let d_contracts =
+    List.map
+      (fun c ->
+        {
+          cn_name = String.uncapitalize_ascii c.c_name.id_str;
+          cn_num_kont = c.c_num_kont;
+        })
+      cs
+  in
+  let module G = Generator (struct
+    let desc = { d_contracts; d_whyml = [] }
+  end) in
+  return
+  @@ Decls
+       (preambles
+       @ (gen_gparam epp :: G.operation_ty_def :: ds)
+       @ [ G.ctx_ty_def; G.ctx_wf_def ]
+       @ postambles @ invariants
+       @ [ Drec (G.unknown_func_def :: G.func_def) ])
 
 let from_file s =
   let f = Lexer.parse_mlw_file @@ Lexing.from_channel @@ open_in s in
   let r =
-    let* cs, epp = parse_mlw f in
-    convert_mlw epp cs
+    let* preambles, postambles, cs, epp = parse_mlw f in
+    convert_mlw preambles postambles epp cs
   in
   raise_error r
