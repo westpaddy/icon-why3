@@ -234,7 +234,7 @@ let parse_contract loc id ds =
   in
   return { c_name = id; c_store_ty; c_entrypoints; c_num_kont; c_pre; c_post }
 
-let parse_unknown (ds : Ptree.decl list) =
+let parse_unknown (loc : Loc.position) (ds : Ptree.decl list) =
   let parse_entrypoint_type (ds : Ptree.decl list) =
     List.fold_left_e
       (fun m -> function
@@ -250,20 +250,39 @@ let parse_unknown (ds : Ptree.decl list) =
         | _ -> error_with "invalid format: predicate declaration is expected")
       StringMap.empty ds
   in
-  let* oep =
+  let* oep, opre, opost =
     List.fold_left_e
-      (fun oep -> function
+      (fun (oep, opre, opost) -> function
         | Dscope (_, _, id, ds) when id.id_str = "Entrypoint" ->
             let* () =
               error_unless (oep = None)
                 ~err:(error_of_fmt "multiple declaration of Entrypoint")
             in
             let* ep = parse_entrypoint_type ds in
-            return (Some ep)
+            return (Some ep, opre, opost)
+        | Dlogic [ ld ] when ld.ld_ident.id_str = Id.pre.id_str ->
+            let* () =
+              error_unless (opre = None)
+                ~err:(error_of_fmt ~loc:ld.ld_loc "multiple declaration of pre")
+            in
+            return (oep, Some ld, opost)
+        | Dlogic [ ld ] when ld.ld_ident.id_str = Id.post.id_str ->
+            let* () =
+              error_unless (opost = None)
+                ~err:(error_of_fmt ~loc:ld.ld_loc "multiple declaration of pre")
+            in
+            return (oep, opre, Some ld)
         | _ -> error_with "invalid format: unexpected declaration")
-      None ds
+      (None, None, None) ds
   in
-  return @@ Option.value oep ~default:StringMap.empty
+  let ep = Option.value oep ~default:StringMap.empty in
+  let* pre =
+    Option.to_iresult opre ~none:(error_of_fmt ~loc "pre is missing")
+  in
+  let* post =
+    Option.to_iresult opost ~none:(error_of_fmt ~loc "post is missing")
+  in
+  return @@ (ep, pre, post)
 
 let parse_mlw (mlw : Ptree.mlw_file) =
   let* scopes =
@@ -291,11 +310,11 @@ let parse_mlw (mlw : Ptree.mlw_file) =
     | Some (_, _, ds) -> ds
   in
   let scopes = StringMap.remove Id.postambles_scope.id_str scopes in
-  let* _loc, _id, ds =
+  let* loc, _id, ds =
     StringMap.find_opt "Unknown" scopes
     |> Option.to_iresult ~none:(error_of_fmt "Unknown scope must be declared")
   in
-  let* ep = parse_unknown ds in
+  let* ep, pre, post = parse_unknown loc ds in
   let scopes = StringMap.remove "Unknown" scopes in
   let* cs, epp =
     StringMap.fold_e
@@ -316,304 +335,4 @@ let parse_mlw (mlw : Ptree.mlw_file) =
       scopes
       ([], StringMap.singleton "Unknown" ep)
   in
-  return (preambles, postambles, cs, epp)
-
-(** Generate the global parameter constructor name for entrypoint [ep] of type [s]. *)
-let gen_gparam_cstr (ep : string) (s : Sort.t list) : string =
-  let re = Regexp.(compile @@ alt [ char ' '; char '('; char ')'; char ',' ]) in
-  List.map
-    (fun s ->
-      Sort.string_of_sort s
-      |> Regexp.replace re ~f:(fun g ->
-             match Regexp.Group.get g 0 with
-             | " " -> "0"
-             | "(" -> "1"
-             | ")" -> "2"
-             | "," -> "3"
-             | _ -> assert false))
-    s
-  |> String.concat "4"
-  |> Format.sprintf "Gp'0%s'0%s" ep
-
-let convert_gparam (epp : Sort.t list StringMap.t StringMap.t) (t : Ptree.term)
-    : Ptree.term iresult =
-  let convert id =
-    match String.split_on_char '\'' id.Ptree.id_str with
-    | "Gp" :: cn_n :: ep_ns ->
-        let ep_n = String.concat "'" ep_ns in
-        let cn =
-          try StringMap.find cn_n epp
-          with Not_found ->
-            raise
-            @@ Loc.Located
-                 (id.id_loc, Failure (Format.sprintf "%s is not declared" cn_n))
-        in
-        let s =
-          try StringMap.find ep_n cn
-          with Not_found ->
-            raise
-            @@ Loc.Located
-                 ( id.id_loc,
-                   Failure (Format.sprintf "%s doesn't have %s" cn_n ep_n) )
-        in
-        { id with id_str = gen_gparam_cstr ep_n s }
-    | _ -> id
-  in
-  let open Ptree_mapper in
-  try return @@ apply_term t { default_mapper with ident = convert }
-  with Loc.Located (loc, Failure s) -> error_with ~loc "%s" s
-
-let convert_entrypoint (epp : Sort.t list StringMap.t StringMap.t)
-    (ep : entrypoint) =
-  let* body = convert_gparam epp ep.ep_body in
-  return
-    {
-      ld_loc = ep.ep_loc;
-      ld_ident = ep.ep_name;
-      ld_params =
-        ep.ep_params.epp_step :: ep.ep_params.epp_old_s :: ep.ep_params.epp_ops
-        :: ep.ep_params.epp_new_s :: ep.ep_params.epp_param;
-      ld_type = None;
-      ld_def = Some body;
-    }
-
-let gen_spec (epp : Sort.t list StringMap.t) =
-  let st : Ptree.param =
-    ( Loc.dummy_position,
-      Some (Ptree_helpers.ident "st"),
-      false,
-      PTtyapp (Ptree_helpers.qualid [ "step" ], []) )
-  in
-  let gp : Ptree.param =
-    ( Loc.dummy_position,
-      Some (Ptree_helpers.ident "gp"),
-      false,
-      PTtyapp (Ptree_helpers.qualid [ "gparam" ], []) )
-  in
-  let s : Ptree.param =
-    ( Loc.dummy_position,
-      Some (Ptree_helpers.ident "s"),
-      false,
-      PTtyapp (Ptree_helpers.qualid [ "storage" ], []) )
-  in
-  let op : Ptree.param =
-    ( Loc.dummy_position,
-      Some (Ptree_helpers.ident "op"),
-      false,
-      Sort.pty_of_sort Sort.(S_list S_operation) )
-  in
-  let s' : Ptree.param =
-    ( Loc.dummy_position,
-      Some (Ptree_helpers.ident "s'"),
-      false,
-      PTtyapp (Ptree_helpers.qualid [ "storage" ], []) )
-  in
-  let args =
-    Ptree_helpers.
-      [
-        tvar @@ qualid [ "st" ];
-        tvar @@ qualid [ "s" ];
-        tvar @@ qualid [ "op" ];
-        tvar @@ qualid [ "s'" ];
-      ]
-  in
-  let cls =
-    StringMap.fold
-      (fun en s cls ->
-        let params =
-          List.mapi
-            (fun i _ ->
-              Ptree_helpers.(pat_var @@ ident @@ Format.sprintf "p%d" i))
-            s
-        in
-        let args =
-          args
-          @ List.mapi
-              (fun i _ ->
-                Ptree_helpers.(tvar @@ qualid [ Format.sprintf "p%d" i ]))
-              s
-        in
-        Ptree_helpers.
-          ( pat @@ Papp (qualid [ gen_gparam_cstr en s ], params),
-            tapp (qualid [ "Spec"; en ]) args )
-        :: cls)
-      epp
-      [ Ptree_helpers.(pat Pwild, term Tfalse) ]
-  in
-  let body =
-    Ptree_helpers.term @@ Tcase (Ptree_helpers.(tvar (qualid [ "gp" ])), cls)
-  in
-  let ld_loc = Loc.dummy_position in
-  let ld_ident = Ptree_helpers.ident "spec" in
-  let ld_params = [ st; gp; s; op; s' ] in
-  let ld_type = None in
-  let ld_def = Some body in
-  { ld_loc; ld_ident; ld_params; ld_type; ld_def }
-
-let gen_storage_wf td =
-  let sto : Ptree.param =
-    ( Loc.dummy_position,
-      Some (Ptree_helpers.ident "s"),
-      false,
-      PTtyapp (Ptree_helpers.qualid [ "storage" ], []) )
-  in
-  let* body =
-    match td.td_def with
-    | TDalias pty ->
-        let* s = Sort.sort_of_pty pty in
-        return @@ Gen_mlw.sort_wf s Gen_mlw.(E.mk_var @@ param_id sto)
-    | TDrecord flds ->
-        List.fold_left_e
-          (fun t f ->
-            let* s = Sort.sort_of_pty f.f_pty in
-            let p =
-              Gen_mlw.(
-                sort_wf s
-                @@ Ptree_helpers.eapp (qid f.f_ident)
-                     [ E.mk_var @@ param_id sto ])
-            in
-            return @@ Gen_mlw.T.mk_and p t)
-          (Ptree_helpers.term Ttrue) flds
-    | _ -> assert false
-  in
-  return
-    {
-      ld_loc = Loc.dummy_position;
-      ld_ident = Ptree_helpers.ident "storage_wf";
-      ld_params = [ sto ];
-      ld_type = None;
-      ld_def = Some body;
-    }
-
-let convert_contract (epp : Sort.t list StringMap.t StringMap.t) (c : contract)
-    =
-  let* eps =
-    List.fold_left_e
-      (fun tl ep ->
-        let* ep = convert_entrypoint epp ep in
-        return @@ (Dlogic [ ep ] :: tl))
-      [] c.c_entrypoints
-  in
-  let* storage_wf = gen_storage_wf c.c_store_ty in
-  return
-  @@ Dscope
-       ( Loc.dummy_position,
-         false,
-         c.c_name,
-         [
-           Dlogic
-             [
-               {
-                 ld_loc = Loc.dummy_position;
-                 ld_ident = Ptree_helpers.ident "addr";
-                 ld_params = [];
-                 ld_type = Some (Sort.pty_of_sort Sort.S_address);
-                 ld_def = None;
-               };
-             ];
-           Dtype [ c.c_store_ty ];
-           Dlogic [ storage_wf ];
-           Dscope (Loc.dummy_position, false, Ptree_helpers.ident "Spec", eps);
-           Dlogic [ gen_spec (StringMap.find c.c_name.id_str epp) ];
-         ] )
-
-let gen_gparam (epp : Sort.t list StringMap.t StringMap.t) =
-  let module S = Set.Make (struct
-    type t = Loc.position * ident * param list
-
-    let compare = compare
-  end) in
-  let td_def =
-    TDalgebraic
-      (S.elements
-      @@ StringMap.fold
-           (fun _ ->
-             StringMap.fold (fun en s cstrs ->
-                 S.add
-                   ( Loc.dummy_position,
-                     Ptree_helpers.ident @@ gen_gparam_cstr en s,
-                     List.map
-                       (fun s ->
-                         (Loc.dummy_position, None, false, Sort.pty_of_sort s))
-                       s )
-                   cstrs))
-           epp S.empty)
-  in
-  Dtype
-    [
-      {
-        td_loc = Loc.dummy_position;
-        td_ident = Ptree_helpers.ident "gparam";
-        td_params = [];
-        td_vis = Public;
-        td_mut = false;
-        td_inv = [];
-        td_wit = None;
-        td_def;
-      };
-    ]
-
-let convert_mlw (preambles : decl list) (postambles : decl list)
-    (epp : Sort.t list StringMap.t StringMap.t) (cs : contract list) =
-  let* ds = List.map_e (convert_contract epp) cs in
-  let* invariants =
-    let* lds =
-      List.map_e
-        (fun c ->
-          let* pre_def = Option.map_e (convert_gparam epp) c.c_pre.ld_def in
-          let* post_def = Option.map_e (convert_gparam epp) c.c_post.ld_def in
-          return
-            [
-              Dlogic
-                [
-                  {
-                    c.c_pre with
-                    ld_ident =
-                      Ptree_helpers.ident @@ String.uncapitalize_ascii
-                      @@ c.c_name.id_str ^ "_pre";
-                    ld_def = pre_def;
-                  };
-                ];
-              Dlogic
-                [
-                  {
-                    c.c_post with
-                    ld_ident =
-                      Ptree_helpers.ident @@ String.uncapitalize_ascii
-                      @@ c.c_name.id_str ^ "_post";
-                    ld_def = post_def;
-                  };
-                ];
-            ])
-        cs
-    in
-    return @@ List.flatten lds
-  in
-  let open Gen_mlw in
-  let d_contracts =
-    List.map
-      (fun c ->
-        {
-          cn_name = String.uncapitalize_ascii c.c_name.id_str;
-          cn_num_kont = c.c_num_kont;
-        })
-      cs
-  in
-  let module G = Generator (struct
-    let desc = { d_contracts; d_whyml = [] }
-  end) in
-  return
-  @@ Decls
-       (preambles
-       @ (gen_gparam epp :: G.operation_ty_def :: ds)
-       @ [ G.ctx_ty_def; G.ctx_wf_def ]
-       @ postambles @ invariants
-       @ [ Drec (G.unknown_func_def :: G.func_def) ])
-
-let from_file s =
-  let f = Lexer.parse_mlw_file @@ Lexing.from_channel @@ open_in s in
-  let r =
-    let* preambles, postambles, cs, epp = parse_mlw f in
-    convert_mlw preambles postambles epp cs
-  in
-  raise_error r
+  return (preambles, postambles, cs, epp, pre, post)

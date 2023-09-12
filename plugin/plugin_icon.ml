@@ -49,7 +49,7 @@ let () =
 
 let read_channel env _path file c =
   let f = Lexer.parse_mlw_file @@ Lexing.from_channel c in
-  let desc = Error_monad.raise_error @@ Translator.from_tzw f in
+  let desc = Error_monad.raise_error @@ Gen_mlw.from_file f in
   Typing.type_mlw_file env [] (file ^ ".mlw") @@ Gen_mlw.file desc
 
 let () =

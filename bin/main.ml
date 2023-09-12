@@ -13,7 +13,7 @@ let () =
   Arg.parse []
     (fun file ->
       Format.printf "%a@." (Mlw_printer.pp_mlw_file ~attr:true)
-      @@ Tzw.from_file file)
+      @@ Gen_mlw.from_file file)
     usage
 
 (* let mlw_file = Gen_mlw.file @@ Translator.parse_file "test/dexter_c.mlw" *)
