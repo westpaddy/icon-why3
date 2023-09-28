@@ -845,7 +845,8 @@ let gen_gparam (epp : Sort.t list StringMap.t StringMap.t) =
                          (Loc.dummy_position, None, false, Sort.pty_of_sort s))
                        s )
                    cstrs))
-           epp S.empty)
+           epp
+      @@ S.singleton (Loc.dummy_position, ident "GpUnknown", []))
   in
   Dtype
     [
