@@ -48,7 +48,7 @@ end
 
 scope Unknown
 
-  predicate pre (c : ctx) = true
+  predicate pre (_c : ctx) = true
 
   predicate post (c : ctx) (c' : ctx) =
     c.boomerang_balance = c'.boomerang_balance
@@ -65,15 +65,15 @@ scope Boomerang
 
   type storage = unit
 
-  predicate pre (c : ctx) = true
+  predicate pre (_c : ctx) = true
 
-  predicate post (st : step) (gp : gparam) (c : ctx) (c' : ctx) = inv_post c c'
+  predicate post (_st : step) (_gp : gparam) (c : ctx) (c' : ctx) = inv_post c c'
 
   let upper_ops = 1
 
   scope Spec
 
-  predicate default (st : step) (p : unit) (s : storage) (ops : list operation) (s' : storage) =
+  predicate default (st : step) (_p : unit) (_s : storage) (ops : list operation) (_s' : storage) =
     (st.amount = 0 -> ops = Nil) /\
     (st.amount > 0 -> ops = Cons (Xfer (Gp'Unknown'default ()) st.amount st.sender) Nil)
 
