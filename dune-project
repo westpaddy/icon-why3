@@ -8,4 +8,4 @@
  (name icon)
  (synopsis "icon-why3")
  (description "why3 plugin for icon project")
- (depends why3))
+ (depends why3 re))

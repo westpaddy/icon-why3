@@ -938,23 +938,26 @@ let convert_mlw (preambles : decl list) (postambles : decl list)
        @ postambles @ invariants
        @ [ Drec (G.unknown_func_def :: G.func_def) ])
 
-let file desc =
-  let module G = Generator (struct
-    let desc = desc
-  end) in
-  Decls
-    ([ use ~import:false [ "michelson"; "Michelson" ] ]
-    @ [ G.ctx_ty_def; G.operation_ty_def ]
-    (* @ List.map (fun ld -> Dlogic [ ld ]) G.accessor *)
-    @ [ G.ctx_wf_def ]
-    @ desc.d_whyml
-    (* @ List.map (fun ld -> Dlogic [ ld ]) G.spec *)
-    @ [ Drec (G.unknown_func_def :: G.func_def) ])
+(* let file desc = *)
+(*   let module G = Generator (struct *)
+(*     let desc = desc *)
+(*   end) in *)
+(*   Decls *)
+(*     ([ use ~import:false [ "michelson"; "Michelson" ] ] *)
+(*     @ [ G.ctx_ty_def; G.operation_ty_def ] *)
+(*     (\* @ List.map (fun ld -> Dlogic [ ld ]) G.accessor *\) *)
+(*     @ [ G.ctx_wf_def ] *)
+(*     @ desc.d_whyml *)
+(*     (\* @ List.map (fun ld -> Dlogic [ ld ]) G.spec *\) *)
+(*     @ [ Drec (G.unknown_func_def :: G.func_def) ]) *)
 
-let from_file s =
-  let f = Lexer.parse_mlw_file @@ Lexing.from_channel @@ open_in s in
+let from_mlw mlw =
   let r =
-    let* preambles, postambles, cs, epp, pre, post = Tzw.parse_mlw f in
+    let* preambles, postambles, cs, epp, pre, post = Tzw.parse_mlw mlw in
     convert_mlw preambles postambles epp cs pre post
   in
   raise_error r
+
+let from_file s =
+  let f = Lexer.parse_mlw_file @@ Lexing.from_channel @@ open_in s in
+  from_mlw f

@@ -73,7 +73,8 @@ let default_mapper =
       | Tquant (qop, binds, trig, t) ->
           Tquant
             (qop, binds, List.map (List.map (sub.term sub)) trig, sub.term sub t)
-      | Teps (id, pty, t) -> Teps (sub.ident id, sub.pty sub pty, sub.term sub t)
+      (* The following case will need for Why3 dev version. *)
+      (* | Teps (id, pty, t) -> Teps (sub.ident id, sub.pty sub pty, sub.term sub t) *)
       | Tattr (attr, t) -> Tattr (attr, sub.term sub t)
       | Tlet (id, t1, t2) ->
           Tlet (sub.ident id, sub.term sub t1, sub.term sub t2)

@@ -5,6 +5,7 @@ description: "why3 plugin for icon project"
 depends: [
   "dune" {>= "2.9"}
   "why3"
+  "re"
   "odoc" {with-doc}
 ]
 build: [
