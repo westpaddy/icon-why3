@@ -1,0 +1,82 @@
+scope Preambles
+  use export int.Int
+  use export int.Abs
+  use export int.EuclideanDivision
+  use export list.List
+  use export option.Option
+  use export map.Map
+  use export map.Const
+
+  exception Insufficient_mutez
+  exception Terminate
+
+  type nat = int
+
+  type mutez = int
+
+  type address = int
+
+  type key_hash = int
+
+  type timestamp = int
+
+  type contract 'a = int
+
+  type or 'a 'b = Left 'a | Right 'b
+
+  type step = (address, address, address, mutez)
+
+  function mk_step (source : address) (sender : address) (self : address) (amount : mutez) : step =
+    (source, sender, self, amount)
+
+  function source (st : step) : address =
+    match st with x, _, _, _ -> x end
+
+  function sender (st : step) : address =
+    match st with _, x, _, _ -> x end
+
+  function self (st : step) : address =
+    match st with _, _, x, _ -> x end
+
+  function amount (st : step) : mutez =
+    match st with  _, _, _, x -> x end
+
+  predicate st_wf (st : step) =
+    st.amount >= 0
+
+end
+
+scope Unknown
+
+  predicate pre (c : ctx) = true
+
+  predicate post (c : ctx) (c' : ctx) =
+    c.boomerang_balance = c'.boomerang_balance
+
+  scope Entrypoint
+
+  predicate default unit
+
+  end
+
+end
+
+scope Boomerang
+
+  type storage = unit
+
+  predicate pre (c : ctx) = true
+
+  predicate post (st : step) (gp : gparam) (c : ctx) (c' : ctx) = inv_post c c'
+
+  let upper_ops = 1
+
+  scope Spec
+
+  predicate default (st : step) (p : unit) (s : storage) (ops : list operation) (s' : storage) =
+    (st.amount = 0 -> ops = Nil) /\
+    (st.amount > 0 -> ops = Cons (Xfer (Gp'Unknown'default ()) st.amount st.sender) Nil)
+
+  end
+
+end

@@ -1,0 +1,121 @@
+scope Preambles
+  use export int.Int
+  use export int.Abs
+  use export int.EuclideanDivision
+  use export list.List
+  use export option.Option
+  use export map.Map
+  use export map.Const
+
+  exception Insufficient_mutez
+  exception Terminate
+
+  type nat = int
+
+  type mutez = int
+
+  type address = int
+
+  type key_hash = int
+
+  type timestamp = int
+
+  type contract 'a = int
+
+  type or 'a 'b = Left 'a | Right 'b
+
+  type step = (address, address, address, mutez)
+
+  function mk_step (source : address) (sender : address) (self : address) (amount : mutez) : step =
+    (source, sender, self, amount)
+
+  function source (st : step) : address =
+    match st with x, _, _, _ -> x end
+
+  function sender (st : step) : address =
+    match st with _, x, _, _ -> x end
+
+  function self (st : step) : address =
+    match st with _, _, x, _ -> x end
+
+  function amount (st : step) : mutez =
+    match st with  _, _, _, x -> x end
+
+  predicate st_wf (st : step) =
+    st.amount >= 0
+
+  function sum_of : map address mutez -> mutez
+
+  axiom SumE : sum_of (const 0) = 0
+
+  axiom SumI : forall m k v. sum_of m[k <- v] = sum_of m + v - m[k]
+
+  axiom SumN : forall m k. m[k] <= sum_of m
+
+end
+
+scope Unknown
+
+  predicate pre (c : ctx) =
+    c.auction_storage.Auction.beneficiary <> c.auction_storage.Auction.highest_bidder /\
+    c.auction_storage.Auction.pending_returns[c.auction_storage.Auction.beneficiary] = 0 /\
+    (not c.auction_storage.Auction.ended -> c.auction_storage.Auction.highest_bid + sum_of c.auction_storage.Auction.pending_returns <= c.auction_balance) /\
+    (c.auction_storage.Auction.ended -> sum_of c.auction_storage.Auction.pending_returns < c.auction_balance)
+
+  predicate post (c : ctx) (c' : ctx) =
+    c.auction_storage.Auction.beneficiary = c'.auction_storage.Auction.beneficiary /\
+    c'.auction_storage.Auction.beneficiary <> c'.auction_storage.Auction.highest_bidder /\
+    c'.auction_storage.Auction.pending_returns[c'.auction_storage.Auction.beneficiary] = 0 /\
+    (c.auction_storage.Auction.ended -> c'.auction_storage.Auction.ended) /\
+    (not c.auction_storage.Auction.ended -> c.auction_storage.Auction.highest_bid + sum_of c.auction_storage.Auction.pending_returns <= c.auction_balance) /\
+    (c.auction_storage.Auction.ended -> sum_of c.auction_storage.Auction.pending_returns < c.auction_balance)
+
+  scope Entrypoint
+
+  predicate default unit
+
+  end
+end
+
+scope Auction
+
+  type storage = {
+    beneficiary : address;
+    highest_bidder : address;
+    highest_bid : mutez;
+    ended : bool;
+    pending_returns : map address mutez;
+  }
+
+  let upper_ops = 1
+
+  predicate pre (c : ctx) = inv_pre c
+
+  predicate post (st : step) (gp : gparam) (c : ctx) (c' : ctx) = inv_post c c'
+
+  scope Spec
+
+  predicate bid (st : step) (p : unit) (s : storage) (ops : list operation) (s' : storage) =
+    not s.ended /\
+    s.highest_bid < st.amount /\
+    st.sender <> s.beneficiary /\
+    s' = { s with
+           highest_bidder = st.sender;
+           highest_bid = st.amount;
+           pending_returns = s.pending_returns[s.highest_bidder <- s.pending_returns[s.highest_bidder] + s.highest_bid] } /\
+    ops = Nil
+
+  predicate withdraw (st : step) (p : unit) (s : storage) (ops : list operation) (s' : storage) =
+    0 < st.amount /\
+    s' = { s with pending_returns = s.pending_returns[st.sender <- 0] } /\
+    ops = Cons (Xfer (Gp'Unknown'default ()) s.pending_returns[st.sender] st.sender) Nil
+
+  predicate end_auction (st : step) (p : unit) (s : storage) (ops : list operation) (s' : storage) =
+    not s.ended /\
+    0 < st.amount /\
+    s' = { s with ended = true } /\
+    ops = Cons (Xfer (Gp'Unknown'default ()) s.highest_bid s.beneficiary) Nil
+
+  end
+
+end
