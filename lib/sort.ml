@@ -1,7 +1,5 @@
 (** Sorts for the FOL theory used as the assertion language *)
 
-type tyvar = string
-
 type t =
   (* core data types *)
   | S_string

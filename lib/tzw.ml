@@ -1,3 +1,5 @@
+(** tzw program parser *)
+
 module Regexp = Re
 open Why3
 open Ptree
@@ -35,6 +37,16 @@ type contract = {
   c_post : Ptree.logic_decl;
 }
 
+type t = {
+  tzw_preambles : Ptree.decl list;
+  tzw_postambles : Ptree.decl list;
+  tzw_knowns : contract list;
+  tzw_epp : Sort.t list StringMap.t StringMap.t;
+  tzw_unknown_pre : Ptree.logic_decl;
+  tzw_unknown_post : Ptree.logic_decl;
+}
+
+(** entrypoint params are "(st : step) (p1 : t1) ... (pn : tn) (s : store) (ops : list operation) (s' : store)", where "t1 ... tn" must be a michelson type. *)
 let parse_entrypoint_params (params : Ptree.param list) =
   let param_loc (l, _, _, _) = l in
   let param_pty (_, _, _, pty) = pty in
@@ -335,4 +347,12 @@ let parse_mlw (mlw : Ptree.mlw_file) =
       scopes
       ([], StringMap.singleton "Unknown" ep)
   in
-  return (preambles, postambles, cs, epp, pre, post)
+  return
+    {
+      tzw_preambles = preambles;
+      tzw_postambles = postambles;
+      tzw_knowns = cs;
+      tzw_epp = epp;
+      tzw_unknown_pre = pre;
+      tzw_unknown_post = post;
+    }

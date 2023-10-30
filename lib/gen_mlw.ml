@@ -862,10 +862,9 @@ let gen_gparam (epp : Sort.t list StringMap.t StringMap.t) =
       };
     ]
 
-let convert_mlw (preambles : decl list) (postambles : decl list)
-    (epp : Sort.t list StringMap.t StringMap.t) (cs : Tzw.contract list)
-    (pre : Ptree.logic_decl) (post : Ptree.logic_decl) =
-  let* ds = List.map_e (convert_contract epp) cs in
+let convert_mlw (tzw : Tzw.t) =
+  let epp = tzw.tzw_epp in
+  let* ds = List.map_e (convert_contract epp) tzw.tzw_knowns in
   let* invariants =
     let* lds =
       List.map_e
@@ -895,15 +894,19 @@ let convert_mlw (preambles : decl list) (postambles : decl list)
                   };
                 ];
             ])
-        cs
+        tzw.tzw_knowns
     in
-    let* pre_def = Option.map_e (convert_gparam epp) pre.ld_def in
-    let* post_def = Option.map_e (convert_gparam epp) post.ld_def in
+    let* pre_def =
+      Option.map_e (convert_gparam epp) tzw.tzw_unknown_pre.ld_def
+    in
+    let* post_def =
+      Option.map_e (convert_gparam epp) tzw.tzw_unknown_post.ld_def
+    in
     return
     @@ Dlogic
          [
            {
-             pre with
+             tzw.tzw_unknown_pre with
              ld_ident = Ptree_helpers.ident "inv_pre";
              ld_def = pre_def;
            };
@@ -911,7 +914,7 @@ let convert_mlw (preambles : decl list) (postambles : decl list)
        :: Dlogic
             [
               {
-                post with
+                tzw.tzw_unknown_post with
                 ld_ident = Ptree_helpers.ident "inv_post";
                 ld_def = post_def;
               };
@@ -925,17 +928,17 @@ let convert_mlw (preambles : decl list) (postambles : decl list)
           cn_name = String.uncapitalize_ascii c.c_name.id_str;
           cn_num_kont = c.c_num_kont;
         })
-      cs
+      tzw.tzw_knowns
   in
   let module G = Generator (struct
     let desc = { d_contracts; d_whyml = [] }
   end) in
   return
   @@ Decls
-       (preambles
+       (tzw.tzw_preambles
        @ (gen_gparam epp :: G.operation_ty_def :: ds)
        @ [ G.ctx_ty_def; G.ctx_wf_def ]
-       @ postambles @ invariants
+       @ tzw.tzw_postambles @ invariants
        @ [ Drec (G.unknown_func_def :: G.func_def) ])
 
 (* let file desc = *)
@@ -952,10 +955,7 @@ let convert_mlw (preambles : decl list) (postambles : decl list)
 (*     @ [ Drec (G.unknown_func_def :: G.func_def) ]) *)
 
 let from_mlw mlw =
-  let r =
-    let* preambles, postambles, cs, epp, pre, post = Tzw.parse_mlw mlw in
-    convert_mlw preambles postambles epp cs pre post
-  in
+  let r = Tzw.parse_mlw mlw >>= convert_mlw in
   raise_error r
 
 let from_file s =
