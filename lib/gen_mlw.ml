@@ -934,12 +934,13 @@ let convert_mlw (tzw : Tzw.t) =
     let desc = { d_contracts; d_whyml = [] }
   end) in
   return
-  @@ Decls
-       (tzw.tzw_preambles
-       @ (gen_gparam epp :: G.operation_ty_def :: ds)
-       @ [ G.ctx_ty_def; G.ctx_wf_def ]
-       @ tzw.tzw_postambles @ invariants
-       @ [ Drec (G.unknown_func_def :: G.func_def) ])
+  @@ Modules [ ident "Top",
+               tzw.tzw_preambles
+               @ (gen_gparam epp :: G.operation_ty_def :: ds)
+               @ [ G.ctx_ty_def; G.ctx_wf_def ]
+               @ tzw.tzw_postambles @ invariants
+               @ [ Drec (G.unknown_func_def :: G.func_def) ]
+             ]
 
 (* let file desc = *)
 (*   let module G = Generator (struct *)
