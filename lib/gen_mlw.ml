@@ -927,15 +927,41 @@ let convert_mlw (tzw : Tzw.t) =
   let module G = Generator (struct
     let desc = { d_contracts; d_whyml = [] }
   end) in
-  let ty_defs = Dtype [gen_gparam epp; G.operation_ty_def] in
-  return
-  @@ Modules [ ident "Top",
-               tzw.tzw_preambles
-               @ (ty_defs :: ds)
-               @ [ G.ctx_ty_def; G.ctx_wf_def ]
-               @ tzw.tzw_postambles @ invariants
-               @ [ Drec (G.unknown_func_def :: G.func_def) ]
-             ]
+
+  let decls =
+    List.concat
+      [
+        (* contents of [scope Preambles] *)
+        tzw.tzw_preambles;
+
+        [Dtype [
+            (* type gparam = .. *)
+            gen_gparam epp;
+
+            (* with operation = .. *)
+            G.operation_ty_def
+          ]];
+
+        (* Scope Contract .. end *)
+        ds;
+
+        (* type ctx = .. *)
+        [G.ctx_ty_def];
+
+        (* predicate ctx_wf (ctx: ctx) = .. *)
+        [G.ctx_wf_def];
+
+        (* contents of [scope Postambles] *)
+        tzw.tzw_postambles;
+
+        (* inv_pre, inv_post, contract_pre, contract_post *)
+        invariants;
+
+        (* let rec ghost unknown g c .. *)
+        [ Drec (G.unknown_func_def :: G.func_def) ]
+      ]
+  in
+  return @@ Modules [ ident "Top", decls ]
 
 (* let file desc = *)
 (*   let module G = Generator (struct *)
