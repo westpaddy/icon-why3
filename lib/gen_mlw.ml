@@ -46,14 +46,14 @@ let gas_ident = ident "g"
 let terminate_ident = ident "Terminate"
 let insufficient_mutez_ident = ident "Insufficient_mutez"
 let unknown_ident = ident "unknown"
-let unknown_param_ctr_ident = ident "Punknown"
+let _unknown_param_ctr_ident = ident "Punknown"
 let xfer_cstr_ident = ident "Xfer"
 let sdel_cstr_ident = ident "Sdel"
 
 let qid_of (c : contract) (id : ident) =
   qualid [ String.capitalize_ascii c.cn_name; id.id_str ]
 
-let id_contract_of (c : contract) : ident = ident c.cn_name
+let _id_contract_of (c : contract) : ident = ident c.cn_name
 let id_func_of (c : contract) : ident = ident @@ c.cn_name ^ "_func"
 let id_pre_of (c : contract) : ident = ident @@ c.cn_name ^ "_pre"
 let id_post_of (c : contract) : ident = ident @@ c.cn_name ^ "_post"
@@ -63,7 +63,7 @@ let id_store_of (c : contract) : ident = ident @@ c.cn_name ^ "_storage"
 let id_is_param_of (c : contract) : ident =
   ident @@ "is_" ^ c.cn_name ^ "_param"
 
-let constr_of_sort (s : Sort.t) : string =
+let _constr_of_sort (s : Sort.t) : string =
   let re = Regexp.(compile @@ alt [ char ' '; char '('; char ')' ]) in
   Sort.string_of_sort s |> String.capitalize_ascii
   |> Regexp.replace re ~f:(fun g ->
@@ -76,13 +76,13 @@ let constr_of_sort (s : Sort.t) : string =
 
 let qid (id : ident) : qualid = Qident id
 
-let binder_id (x : binder) : ident =
+let _binder_id (x : binder) : ident =
   match x with _, Some x, _, _ -> x | _ -> assert false
 
 let param_id (x : param) : ident =
   match x with _, Some x, _, _ -> x | _ -> assert false
 
-let mk_internal_id s = s
+let _mk_internal_id s = s
 let mk_binder ?pty id : binder = (Loc.dummy_position, Some id, false, pty)
 let mk_param x pty = (Loc.dummy_position, Some (ident x), false, pty)
 
@@ -94,7 +94,7 @@ let mk_xpost id : xpost = (Loc.dummy_position, [ (qid id, None) ])
 module T = struct
   let mk_not (t : term) : term = term @@ Tnot t
 
-  let mk_imply (t1 : term) (t2 : term) : term =
+  let _mk_imply (t1 : term) (t2 : term) : term =
     term @@ Tbinnop (t1, Dterm.DTimplies, t2)
 
   let mk_and (t1 : term) (t2 : term) : term =
@@ -164,7 +164,7 @@ module E = struct
     in
     expr @@ Ematch (e, [ (p, mk_var @@ ident "x") ], [])
 
-  let mk_update (e1 : expr) (m : int) (n : int) (e2 : expr) : expr =
+  let _mk_update (e1 : expr) (m : int) (n : int) (e2 : expr) : expr =
     assert (m > 0 && m > n);
     let p =
       pat
@@ -266,7 +266,7 @@ module Generator (D : Desc) = struct
       (ctx' : expr) : expr =
     eapp (qid @@ id_post_of c) [ st; p; ctx; ctx' ]
 
-  let call_is_param_of (c : contract) (gp : expr) : expr =
+  let _call_is_param_of (c : contract) (gp : expr) : expr =
     eapp (qid @@ id_is_param_of c) [ gp ]
 
   let balance_of (c : contract) (ctx : expr) : expr =
