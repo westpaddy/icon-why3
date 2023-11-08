@@ -39,7 +39,6 @@ type t =
 
 let compare (t1 : t) (t2 : t) = compare t1 t2
 
-(** Pretty printer *)
 let rec pp_sort fmt (ty : t) =
   let open Format in
   match ty with
@@ -93,7 +92,6 @@ open Why3
 open Ptree
 open Ptree_helpers
 
-(** Parse a [Why3.Ptree.pty] value as a Michelson type and convert into a [Sort.t] value. *)
 let rec sort_of_pty (pty : pty) : t iresult =
   let elt1 l =
     match l with
@@ -161,7 +159,6 @@ let rec sort_of_pty (pty : pty) : t iresult =
   | PTparen pty -> sort_of_pty pty
   | _ -> error_with "unknown sort %a" (Mlw_printer.pp_pty ~attr:true).closed pty
 
-(** Convert [t] value into [Why3.Ptree.pty] value.  *)
 let rec pty_of_sort (s : t) : Ptree.pty =
   let ty s = PTtyapp (qualid [ s ], []) in
   match s with
