@@ -111,7 +111,7 @@ let rec ghost unknown (g : int) (c : ctx) : ctx
   else
   if any bool then c
   else
-  let st = any step ensures { st_wf result } in
+  let st = any step ensures { step_wf result } in
   let dst = st.self in
   let p = any param in
   assume
@@ -135,7 +135,7 @@ let rec ghost unknown (g : int) (c : ctx) : ctx
 
 with ghost auction_func (g : int) (st : step) (p : auction_param) (c : ctx) : ctx
   requires { st.self = auction }
-  requires { st_wf st }
+  requires { step_wf st }
   requires { ctx_wf c }
   ensures { ctx_wf result }
   requires { auction_sigma_pre st c }

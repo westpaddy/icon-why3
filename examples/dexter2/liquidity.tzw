@@ -24,24 +24,20 @@ scope Preambles
 
   type or 'a 'b = Left 'a | Right 'b
 
-  type step = (address, address, address, mutez)
+  type step = 
+    { source: address;
+      sender: address;
+      self: address;
+      amount: mutez
+    }
 
   function mk_step (source : address) (sender : address) (self : address) (amount : mutez) : step =
-    (source, sender, self, amount)
+    { source= source; 
+      sender= sender;
+      self= self;
+      amount= amount }
 
-  function source (st : step) : address =
-    match st with x, _, _, _ -> x end
-
-  function sender (st : step) : address =
-    match st with _, x, _, _ -> x end
-
-  function self (st : step) : address =
-    match st with _, _, x, _ -> x end
-
-  function amount (st : step) : mutez =
-    match st with  _, _, _, x -> x end
-
-  predicate st_wf (st : step) =
+  predicate step_wf (st : step) =
     st.amount >= 0
 
   function sum_of : map address (option nat) -> nat

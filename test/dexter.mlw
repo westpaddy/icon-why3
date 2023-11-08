@@ -129,7 +129,7 @@ let rec ghost unknown (g : int) (c : ctx) : ctx
   else
   if any bool then c
   else
-  let st = any step ensures { st_wf result } in
+  let st = any step ensures { step_wf result } in
   let dst = st.self in
   let p = any param in
   assume

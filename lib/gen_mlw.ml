@@ -34,7 +34,7 @@ type desc = {
 let ctx_ty_ident = ident "ctx"
 let ctx_wf_ident = ident "ctx_wf"
 let step_ty_ident = ident "step"
-let step_wf_ident = ident "st_wf"
+let step_wf_ident = ident "step_wf"
 let spec_ident = ident "spec"
 let addr_ident = ident "addr"
 let param_wf_ident = ident "param_wf"
@@ -152,7 +152,9 @@ module E = struct
   let mk_bin (e1 : expr) (o : string) (e2 : expr) : expr =
     expr @@ Einnfix (e1, ident @@ Ident.op_infix o, e2)
 
-  let mk_tuple (el : expr list) : expr = expr @@ Etuple el
+  let _mk_tuple (el : expr list) : expr = expr @@ Etuple el
+
+  let mk_record (el : (qualid * expr) list) : expr = expr @@ Erecord el
 
   let mk_proj (e : expr) (m : int) (n : int) : expr =
     assert (m > 0 && m > n);
@@ -185,7 +187,10 @@ end
 
 module Step_constant = struct
   let mk source sender self amount : expr =
-    E.mk_tuple [ source; sender; self; amount ]
+    E.mk_record [ qualid ["source"], source;
+                  qualid ["sender"], sender;
+                  qualid ["self"], self;
+                  qualid ["amount"], amount ]
 
   let source st : expr = eapp (qualid [ "source" ]) [ st ]
   let sender st : expr = eapp (qualid [ "sender" ]) [ st ]
@@ -240,7 +245,7 @@ module Generator (D : Desc) = struct
   let qid_param_wf_of (c : contract) : qualid = qid_of c param_wf_ident
   let qid_storage_wf_of (c : contract) : qualid = qid_of c storage_wf_ident
   let call_ctx_wf (ctx : expr) : expr = eapp (qid ctx_wf_ident) [ ctx ]
-  let call_st_wf (st : expr) : expr = eapp (qid step_wf_ident) [ st ]
+  let call_step_wf (st : expr) : expr = eapp (qid step_wf_ident) [ st ]
   let call_inv_pre (ctx : expr) : expr = eapp (qualid [ "inv_pre" ]) [ ctx ]
 
   let call_inv_post (ctx : expr) (ctx' : expr) : expr =
@@ -320,7 +325,7 @@ module Generator (D : Desc) = struct
               is_contract_of contract @@ Step_constant.self
               @@ E.var_of_binder st;
               call_ctx_wf @@ E.var_of_binder ctx;
-              call_st_wf @@ E.var_of_binder st;
+              call_step_wf @@ E.var_of_binder st;
               call_param_wf_of contract @@ E.var_of_binder gparam;
               call_pre_of contract @@ E.var_of_binder ctx;
             ];
@@ -466,7 +471,7 @@ module Generator (D : Desc) = struct
       E.mk_if (E.mk_any @@ Sort.pty_of_sort Sort.S_bool) (E.var_of_binder ctx)
       @@ let+ st =
            E.mk_any
-             ~ensure:(T.of_expr @@ call_st_wf @@ E.mk_var @@ ident "result")
+             ~ensure:(T.of_expr @@ call_step_wf @@ E.mk_var @@ ident "result")
              step_pty
          in
          let+ p = E.mk_any gparam_pty in
