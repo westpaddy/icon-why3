@@ -145,20 +145,21 @@ let parse_entrypoint_scope (lds : Ptree.decl list) =
     [] lds
 
 let check_storage_type_decl (td : Ptree.type_decl) : Ptree.type_decl iresult =
+  let loc = td.td_loc in
   let* () =
     error_unless (td.td_params = [])
-      ~err:(error_of_fmt "storage type cannot have type parameters")
+      ~err:(error_of_fmt ~loc "storage type cannot have type parameters")
   in
   let* () =
-    error_unless (td.td_vis = Ptree.Public) ~err:(error_of_fmt "public")
+    error_unless (td.td_vis = Ptree.Public) ~err:(error_of_fmt ~loc "public")
   in
-  let* () = error_unless (td.td_mut = false) ~err:(error_of_fmt "immutable") in
-  let* () = error_unless (td.td_inv = []) ~err:(error_of_fmt "pure record") in
-  let* () = error_unless (td.td_wit = None) ~err:(error_of_fmt "pure record") in
+  let* () = error_unless (td.td_mut = false) ~err:(error_of_fmt ~loc "immutable") in
+  let* () = error_unless (td.td_inv = []) ~err:(error_of_fmt ~loc "pure record") in
+  let* () = error_unless (td.td_wit = None) ~err:(error_of_fmt ~loc "pure record") in
   match td.td_def with
   | TDalias pty ->
       let* _ =
-        trace ~err:(error_of_fmt ~loc:td.td_loc "Michelson type is expected")
+        trace ~err:(error_of_fmt ~loc "Michelson type is expected")
         @@ Sort.sort_of_pty pty
       in
       return td
@@ -176,17 +177,18 @@ let check_storage_type_decl (td : Ptree.type_decl) : Ptree.type_decl iresult =
       in
       return td
   | _ ->
-      error_with
+      error_with ~loc
         "storage type must be a Michelson type or a record type of which \
          fields' type is a Michelson type"
 
 let parse_upper_ops (e : Ptree.expr) =
+  let loc = e.expr_loc in
   match e.expr_desc with
   | Econst (ConstInt i) -> (
       try return @@ BigInt.to_int i.il_int
       with Failure _ ->
-        error_with "upper bound length of operation lists is too large")
-  | _ -> error_with "upper_ops_len shall be an integer constant"
+        error_with ~loc "upper bound length of operation lists is too large")
+  | _ -> error_with ~loc "upper_ops_len shall be an integer constant"
 
 let parse_contract loc id ds =
   let* ostore, okont, oeps, opre, opost =
@@ -195,14 +197,14 @@ let parse_contract loc id ds =
         | Ptree.Dtype [ td ] when td.td_ident.id_str = Id.storage_ty.id_str ->
             let* () =
               error_unless (ostore = None)
-                ~err:(error_of_fmt "multiple declaration of storage type")
+                ~err:(error_of_fmt ~loc:td.td_loc "multiple declaration of storage type")
             in
             let* store = check_storage_type_decl td in
             return (Some store, okont, oeps, opre, opost)
         | Dlet (id, _, _, e) when id.id_str = Id.upper_ops.id_str ->
             let* () =
               error_unless (okont = None)
-                ~err:(error_of_fmt "multiple declaration of upper_ops")
+                ~err:(error_of_fmt ~loc:id.id_loc "multiple declaration of upper_ops")
             in
             let* kont = parse_upper_ops e in
             return (ostore, Some kont, oeps, opre, opost)
@@ -225,7 +227,7 @@ let parse_contract loc id ds =
                 ~err:(error_of_fmt ~loc:ld.ld_loc "multiple declaration of pre")
             in
             return (ostore, okont, oeps, opre, Some ld)
-        | _ -> error_with "unexpected decl")
+        | _ -> error_with ~loc "unexpected decl")
       (None, None, None, None, None)
       ds
   in
@@ -259,16 +261,16 @@ let parse_unknown (loc : Loc.position) (ds : Ptree.decl list) =
                 ld.ld_params
             in
             return @@ StringMap.add ld.ld_ident.id_str s m
-        | _ -> error_with "invalid format: predicate declaration is expected")
+        | _ -> error_with ~loc "invalid format: predicate declaration is expected")
       StringMap.empty ds
   in
   let* oep, opre, opost =
     List.fold_left_e
       (fun (oep, opre, opost) -> function
-        | Dscope (_, _, id, ds) when id.id_str = "Entrypoint" ->
+        | Dscope (loc, _, id, ds) when id.id_str = "Entrypoint" ->
             let* () =
               error_unless (oep = None)
-                ~err:(error_of_fmt "multiple declaration of Entrypoint")
+                ~err:(error_of_fmt ~loc "multiple declaration of Entrypoint")
             in
             let* ep = parse_entrypoint_type ds in
             return (Some ep, opre, opost)
