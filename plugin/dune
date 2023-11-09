@@ -2,7 +2,7 @@
  (name plugin_icon)
  (modes plugin)
  (libraries why3 lib_icon)
- (embed_in_plugin_libraries lib_icon)
+ (embed_in_plugin_libraries re lib_icon)
  (flags
   (:standard -open Lib_icon)))
 
