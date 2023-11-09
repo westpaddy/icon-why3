@@ -67,8 +67,8 @@ scope Unknown
     c'.auction_storage.Auction.beneficiary <> c'.auction_storage.Auction.highest_bidder /\
     c'.auction_storage.Auction.pending_returns[c'.auction_storage.Auction.beneficiary] = 0 /\
     (c.auction_storage.Auction.ended -> c'.auction_storage.Auction.ended) /\
-    (not c.auction_storage.Auction.ended -> c.auction_storage.Auction.highest_bid + sum_of c.auction_storage.Auction.pending_returns <= c.auction_balance) /\
-    (c.auction_storage.Auction.ended -> sum_of c.auction_storage.Auction.pending_returns < c.auction_balance)
+    (not c'.auction_storage.Auction.ended -> c'.auction_storage.Auction.highest_bid + sum_of c'.auction_storage.Auction.pending_returns <= c'.auction_balance) /\
+    (c'.auction_storage.Auction.ended -> sum_of c'.auction_storage.Auction.pending_returns < c'.auction_balance)
 
   scope Entrypoint
 
