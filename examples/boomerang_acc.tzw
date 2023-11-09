@@ -48,7 +48,7 @@ end
 
 scope Unknown
 
-  predicate pre (c : ctx) = true
+  predicate pre (_c : ctx) = true
 
   predicate post (c : ctx) (c' : ctx) =
     c.boomerang_storage <= c'.boomerang_storage /\
@@ -66,15 +66,15 @@ scope Boomerang
 
   type storage = mutez
 
-  predicate pre (c : ctx) = true
+  predicate pre (_c : ctx) = true
 
-  predicate post (st : step) (gp : gparam) (c : ctx) (c' : ctx) = inv_post c c'
+  predicate post (_st : step) (_gp : gparam) (c : ctx) (c' : ctx) = inv_post c c'
 
   let upper_ops = 1
 
   scope Spec
 
-  predicate default (st : step) (p : unit) (s : storage) (ops : list operation) (s' : storage) =
+  predicate default (st : step) (_p : unit) (s : storage) (ops : list operation) (s' : storage) =
     s' = s + st.amount /\
     (st.amount = 0 -> ops = Nil) /\
     (st.amount > 0 -> ops = Cons (Xfer (Gp'Unknown'default ()) st.amount st.sender) Nil)

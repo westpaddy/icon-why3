@@ -137,13 +137,13 @@ scope Cpmm
 
   predicate pre (c : ctx) = pre_inv c
 
-  predicate post (st : step) (gp : gparam) (c : ctx) (c' : ctx) = post_inv c c'
+  predicate post (_st : step) (_gp : gparam) (c : ctx) (c' : ctx) = post_inv c c'
 
   let upper_ops = 3
 
   scope Spec
 
-  predicate add_liquidity (st : step) (p1 : address) (p2 : nat) (p3 : nat) (p4 : timestamp) (s : storage) (op : list operation) (s' : storage) =
+  predicate add_liquidity (_st : step) (_p1 : address) (_p2 : nat) (_p3 : nat) (_p4 : timestamp) (s : storage) (op : list operation) (s' : storage) =
     s.lqt_address <> null_addr /\
     s'.lqt_address = s.lqt_address /\
     let lqt_minted = s'.lqt_total - s.lqt_total in
@@ -155,7 +155,7 @@ scope Cpmm
     | _ -> False
     end
 
-  predicate remove_liquidity (st : step) (p1 : address) (p2 : nat) (p3 : mutez) (p4 : nat) (p5 : timestamp) (s : storage) (op : list operation) (s' : storage) =
+  predicate remove_liquidity (_st : step) (_p1 : address) (p2 : nat) (_p3 : mutez) (_p4 : nat) (_p5 : timestamp) (s : storage) (op : list operation) (s' : storage) =
     let lqt_burned = p2 in
     s.lqt_address <> null_addr /\
     s'.lqt_address = s.lqt_address /\
@@ -169,7 +169,7 @@ scope Cpmm
     | _ -> False
     end
 
-  predicate xtz_to_token (st : step) (p1 : address) (p2 : nat) (p3 : timestamp) (s : storage) (op : list operation) (s' : storage) =
+  predicate xtz_to_token (_st : step) (_p1 : address) (_p2 : nat) (_p3 : timestamp) (s : storage) (op : list operation) (s' : storage) =
     s'.lqt_address = s.lqt_address /\
     s'.lqt_total = s.lqt_total /\
     match op with
@@ -178,7 +178,7 @@ scope Cpmm
     | _ -> False
     end
 
-  predicate token_to_xtz (st : step) (p1 : address) (p2 : nat) (p3 : mutez) (p4 : timestamp) (s : storage) (op : list operation) (s' : storage) =
+  predicate token_to_xtz (_st : step) (_p1 : address) (_p2 : nat) (_p3 : mutez) (_p4 : timestamp) (s : storage) (op : list operation) (s' : storage) =
     s'.lqt_address = s.lqt_address /\
     s'.lqt_total = s.lqt_total /\
     match op with
@@ -188,7 +188,7 @@ scope Cpmm
     | _ -> False
     end
 
-  predicate token_to_token (st : step) (p1 : address) (p2 : nat) (p3 : address) (p4 : nat) (p5 : timestamp) (s : storage) (op : list operation) (s' : storage) =
+  predicate token_to_token (_st : step) (_p1 : address) (_p2 : nat) (_p3 : address) (_p4 : nat) (_p5 : timestamp) (s : storage) (op : list operation) (s' : storage) =
     s'.lqt_address = s.lqt_address /\
     s'.lqt_total = s.lqt_total /\
     match op with
@@ -198,7 +198,7 @@ scope Cpmm
     | _ -> False
     end
 
-  predicate set_baker (st : step) (p1 : option key_hash) (p2 : bool) (s : storage) (op : list operation) (s' : storage) =
+  predicate set_baker (_st : step) (_p1 : option key_hash) (_p2 : bool) (s : storage) (op : list operation) (s' : storage) =
     s'.lqt_address = s.lqt_address /\
     s'.lqt_total = s.lqt_total /\
     match op with
@@ -207,18 +207,18 @@ scope Cpmm
     | _ -> False
     end
 
-  predicate set_manager (st : step) (p : address) (s : storage) (op : list operation) (s' : storage) =
+  predicate set_manager (_st : step) (_p : address) (s : storage) (op : list operation) (s' : storage) =
     s'.lqt_address = s.lqt_address /\
     s'.lqt_total = s.lqt_total /\
     op = Nil
 
-  predicate set_lqt_address (st : step) (p : address) (s : storage) (op : list operation) (s' : storage) =
+  predicate set_lqt_address (_st : step) (p : address) (s : storage) (op : list operation) (s' : storage) =
     s.lqt_address = null_addr /\
     s'.lqt_address = p /\
     s'.lqt_total = s.lqt_total /\
     op = Nil
 
-  predicate update_token_pool (st : step) (p : unit) (s : storage) (op : list operation) (s' : storage) =
+  predicate update_token_pool (_st : step) (_p : unit) (s : storage) (op : list operation) (s' : storage) =
     s'.lqt_address = s.lqt_address /\
     s'.lqt_total = s.lqt_total /\
     match op with
@@ -227,12 +227,12 @@ scope Cpmm
     | _ -> False
     end
 
-  predicate update_token_pool_internal (st : step) (p : list ((address, nat), nat)) (s : storage) (op : list operation) (s' : storage) =
+  predicate update_token_pool_internal (_st : step) (_p : list ((address, nat), nat)) (s : storage) (op : list operation) (s' : storage) =
     s'.lqt_address = s.lqt_address /\
     s'.lqt_total = s.lqt_total /\
     op = Nil
 
-  predicate default (st : step) (p : unit) (s : storage) (op : list operation) (s' : storage) =
+  predicate default (_st : step) (_p : unit) (s : storage) (op : list operation) (s' : storage) =
     s'.lqt_address = s.lqt_address /\
     s'.lqt_total = s.lqt_total /\
     op = Nil
@@ -259,7 +259,7 @@ scope Lqt
 
   scope Spec
 
-  predicate transfer (st : step) (p1 : address) (p2 : address) (p3 : nat) (s : storage) (op : list operation) (s' : storage) =
+  predicate transfer (_st : step) (p1 : address) (p2 : address) (p3 : nat) (s : storage) (op : list operation) (s' : storage) =
     let address_from = p1 in
     let address_to = p2 in
     let value = p3 in
@@ -277,7 +277,7 @@ scope Lqt
     s'.tokens = tokens[address_to <- maybe_to_balance] /\
     op = Nil
 
-  predicate approve (st : step) (p1 : address) (p2 : nat) (s : storage) (op : list operation) (s' : storage) =
+  predicate approve (_st : step) (_p1 : address) (_p2 : nat) (s : storage) (op : list operation) (s' : storage) =
     s'.total_supply = s.total_supply /\
     s'.admin = s.admin /\
     s'.tokens = s.tokens /\
@@ -294,7 +294,7 @@ scope Lqt
     let maybe_new_balance = if new_balance = 0 then None else Some new_balance in
     s'.tokens = s.tokens[target <- maybe_new_balance]
 
-  predicate getAllowance (st : step) (p1 : (address, address)) (p2 : contract nat) (s : storage) (op : list operation) (s' : storage) =
+  predicate getAllowance (_st : step) (_p1 : (address, address)) (p2 : contract nat) (s : storage) (op : list operation) (s' : storage) =
     let callback = p2 in
     s'.total_supply = s.total_supply /\
     s'.admin = s.admin /\
@@ -305,7 +305,7 @@ scope Lqt
     | _ -> False
     end
 
-  predicate getBalance (st : step) (p1 : address) (p2 : contract nat) (s : storage) (op : list operation) (s' : storage) =
+  predicate getBalance (_st : step) (_p1 : address) (p2 : contract nat) (s : storage) (op : list operation) (s' : storage) =
     let callback = p2 in
     s'.total_supply = s.total_supply /\
     s'.admin = s.admin /\
@@ -316,7 +316,7 @@ scope Lqt
     | _ -> False
     end
 
-  predicate getTotalSupply (st : step) (p1 : unit) (p2 : contract nat) (s : storage) (op : list operation) (s' : storage) =
+  predicate getTotalSupply (_st : step) (_p1 : unit) (p2 : contract nat) (s : storage) (op : list operation) (s' : storage) =
     let callback = p2 in
     s'.total_supply = s.total_supply /\
     s'.admin = s.admin /\

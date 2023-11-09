@@ -169,13 +169,13 @@ module E = struct
     let p =
       pat
       @@ Ptuple
-           (List.init m (fun i -> pat @@ Pvar (ident @@ Format.sprintf "x%d" i)))
+           (List.init m (fun i -> pat @@ Pvar (ident @@ Format.sprintf "_x%d" i)))
     in
     let e =
       expr
       @@ Etuple
            (List.init m (fun i ->
-                if i = n then e2 else mk_var (ident @@ Format.sprintf "x%d" i)))
+                if i = n then e2 else mk_var (ident @@ Format.sprintf "_x%d" i)))
     in
     expr @@ Ematch (e1, [ (p, e) ], [])
 
@@ -203,10 +203,10 @@ let rec sort_wf (s : Sort.t) (p : expr) : term =
       @@ Tcase
            ( T.of_expr p,
              [
-               ( pat @@ Papp (qualid [ "Left" ], [ pat @@ Pvar (ident "p") ]),
-                 sort_wf s1 @@ E.mk_var @@ ident "p" );
-               ( pat @@ Papp (qualid [ "Right" ], [ pat @@ Pvar (ident "p") ]),
-                 sort_wf s2 @@ E.mk_var @@ ident "p" );
+               ( pat @@ Papp (qualid [ "Left" ], [ pat @@ Pvar (ident "_p") ]),
+                 sort_wf s1 @@ E.mk_var @@ ident "_p" );
+               ( pat @@ Papp (qualid [ "Right" ], [ pat @@ Pvar (ident "_p") ]),
+                 sort_wf s2 @@ E.mk_var @@ ident "_p" );
              ] )
   | _ -> term Ttrue
 
@@ -692,14 +692,14 @@ let gen_spec (epp : Sort.t list StringMap.t) =
         let params =
           List.mapi
             (fun i _ ->
-              Ptree_helpers.(pat_var @@ ident @@ Format.sprintf "p%d" i))
+              Ptree_helpers.(pat_var @@ ident @@ Format.sprintf "_p%d" i))
             s
         in
         let args =
           args
           @ List.mapi
               (fun i _ ->
-                Ptree_helpers.(tvar @@ qualid [ Format.sprintf "p%d" i ]))
+                Ptree_helpers.(tvar @@ qualid [ Format.sprintf "_p%d" i ]))
               s
         in
         Ptree_helpers.
@@ -732,7 +732,7 @@ let gen_param_wf ep =
         let params, preds =
           List.mapi
             (fun i s ->
-              let p = ident @@ Format.sprintf "p%d" i in
+              let p = ident @@ Format.sprintf "_p%d" i in
               (Ptree_helpers.(pat_var p), sort_wf s @@ E.mk_var p))
             s
           |> List.split
@@ -757,7 +757,7 @@ let gen_param_wf ep =
 let gen_storage_wf td =
   let sto : Ptree.param =
     ( Loc.dummy_position,
-      Some (Ptree_helpers.ident "s"),
+      Some (Ptree_helpers.ident "_s"),
       false,
       PTtyapp (Ptree_helpers.qualid [ "storage" ], []) )
   in
