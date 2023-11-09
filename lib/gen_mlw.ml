@@ -958,6 +958,9 @@ let from_mlw mlw =
   let r = Tzw.parse_mlw mlw >>= convert_mlw in
   raise_error r
 
-let from_file s =
-  let f = Lexer.parse_mlw_file @@ Lexing.from_channel @@ open_in s in
-  from_mlw f
+let from_file fn =
+  In_channel.with_open_text fn (fun ic ->
+      let lexbuf = Lexing.from_channel ic in
+      Lexing.set_filename lexbuf fn ;
+      let f = Lexer.parse_mlw_file lexbuf in
+      from_mlw f)
