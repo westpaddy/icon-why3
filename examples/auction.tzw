@@ -60,7 +60,7 @@ scope Unknown
     c.auction_storage.Auction.beneficiary <> c.auction_storage.Auction.highest_bidder /\
     c.auction_storage.Auction.pending_returns[c.auction_storage.Auction.beneficiary] = 0 /\
     (not c.auction_storage.Auction.ended -> c.auction_storage.Auction.highest_bid + sum_of c.auction_storage.Auction.pending_returns <= c.auction_balance) /\
-    (c.auction_storage.Auction.ended -> sum_of c.auction_storage.Auction.pending_returns < c.auction_balance)
+    (c.auction_storage.Auction.ended -> sum_of c.auction_storage.Auction.pending_returns <= c.auction_balance)
 
   predicate post (c : ctx) (c' : ctx) =
     c.auction_storage.Auction.beneficiary = c'.auction_storage.Auction.beneficiary /\
@@ -68,7 +68,7 @@ scope Unknown
     c'.auction_storage.Auction.pending_returns[c'.auction_storage.Auction.beneficiary] = 0 /\
     (c.auction_storage.Auction.ended -> c'.auction_storage.Auction.ended) /\
     (not c'.auction_storage.Auction.ended -> c'.auction_storage.Auction.highest_bid + sum_of c'.auction_storage.Auction.pending_returns <= c'.auction_balance) /\
-    (c'.auction_storage.Auction.ended -> sum_of c'.auction_storage.Auction.pending_returns < c'.auction_balance)
+    (c'.auction_storage.Auction.ended -> sum_of c'.auction_storage.Auction.pending_returns <= c'.auction_balance)
 
   scope Entrypoint
 
@@ -106,13 +106,11 @@ scope Auction
     ops = Nil
 
   predicate withdraw (st : step) (p : unit) (s : storage) (ops : list operation) (s' : storage) =
-    0 < st.amount /\
     s' = { s with pending_returns = s.pending_returns[st.sender <- 0] } /\
     ops = Cons (Xfer (Gp'Unknown'default ()) s.pending_returns[st.sender] st.sender) Nil
 
   predicate end_auction (st : step) (p : unit) (s : storage) (ops : list operation) (s' : storage) =
     not s.ended /\
-    0 < st.amount /\
     s' = { s with ended = true } /\
     ops = Cons (Xfer (Gp'Unknown'default ()) s.highest_bid s.beneficiary) Nil
 
