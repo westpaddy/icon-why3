@@ -8,4 +8,6 @@
  (name icon)
  (synopsis "icon-why3")
  (description "why3 plugin for icon project")
- (depends why3 re))
+ (depends 
+   (why3 (>= "1.7.0"))
+   re))

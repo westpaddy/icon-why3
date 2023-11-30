@@ -4,7 +4,7 @@ synopsis: "icon-why3"
 description: "why3 plugin for icon project"
 depends: [
   "dune" {>= "2.9"}
-  "why3"
+  "why3" {>= "1.7.0"}
   "re"
   "odoc" {with-doc}
 ]
