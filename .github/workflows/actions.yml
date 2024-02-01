@@ -19,8 +19,8 @@ jobs:
 #          - macos-latest
 #          - windows-latest
         ocaml-compiler:
-          - "4.14.1"
-#          - "5.1"
+#         - "4.14.1"
+          - "5.1"
 
     runs-on: ${{ matrix.os }}
 
@@ -45,7 +45,7 @@ jobs:
             ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('icon.opam') }}
             ${{ runner.os }}-build-${{ env.cache-name }}-
 
-      - run: opam install z3.4.12.2-1
+      - run: opam install z3.4.12.5
 
       - run: opam install . --deps-only --with-test
 
