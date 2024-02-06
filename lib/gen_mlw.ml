@@ -861,6 +861,12 @@ let gen_gparam (epp : Sort.t list StringMap.t StringMap.t) =
     td_def;
   }
 
+let parse_file fn =
+  In_channel.with_open_text fn (fun ic ->
+    let lexbuf = Lexing.from_channel ic in
+    Lexing.set_filename lexbuf fn ;
+    Lexer.parse_mlw_file lexbuf)
+
 let convert_mlw (tzw : Tzw.t) =
   let epp = tzw.tzw_epp in
   let* ds = List.map_e (convert_contract epp) tzw.tzw_knowns in
@@ -929,6 +935,16 @@ let convert_mlw (tzw : Tzw.t) =
         })
       tzw.tzw_knowns
   in
+  let* preambles =
+    let* libs =
+      if !Options.preamble then
+        match parse_file "stdlib/preambles.mlw" with
+        | Decls ds -> return ds
+        | _ -> error_with "invalid premble: preamble must be list of declarations"
+      else (return [])
+    in
+    return (libs @ tzw.tzw_preambles)
+  in
   let module G = Generator (struct
     let desc = { d_contracts; d_whyml = [] }
   end) in
@@ -937,7 +953,7 @@ let convert_mlw (tzw : Tzw.t) =
     List.concat
       [
         (* contents of [scope Preambles] *)
-        tzw.tzw_preambles;
+        preambles;
 
         [Dtype [
             (* type gparam = .. *)
@@ -986,8 +1002,4 @@ let from_mlw mlw =
   raise_error r
 
 let from_file fn =
-  In_channel.with_open_text fn (fun ic ->
-      let lexbuf = Lexing.from_channel ic in
-      Lexing.set_filename lexbuf fn ;
-      let f = Lexer.parse_mlw_file lexbuf in
-      from_mlw f)
+  from_mlw (parse_file fn)

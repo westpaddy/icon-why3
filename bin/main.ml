@@ -10,15 +10,14 @@ let usage = "icon <file>"
 (*     usage *)
 
 let () =
-  Arg.parse []
-    (fun file ->
-       In_channel.with_open_text file (fun ic ->
-           let lexbuf = Lexing.from_channel ic in
-           Lexing.set_filename lexbuf file ;
-           let f = Lexer.parse_mlw_file lexbuf in
-           Format.printf "%a@." (Mlw_printer.pp_mlw_file ~attr:true)
-           @@ Gen_mlw.from_mlw f))
-    usage
+  let files = ref [] in
+  Arg.parse Options.speclist (fun file -> files := file :: !files) usage;
+
+  List.iter (fun file ->
+    let f = Gen_mlw.parse_file file in
+    Format.printf "%a@." (Mlw_printer.pp_mlw_file ~attr:true)
+      @@ Gen_mlw.from_mlw f
+  ) !files
 
 (* let mlw_file = Gen_mlw.file @@ Translator.parse_file "test/dexter_c.mlw" *)
 (* let () = Format.printf "%a@." (Mlw_printer.pp_mlw_file ~attr:true) mlw_file *)
