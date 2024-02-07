@@ -4,6 +4,7 @@ synopsis: "icon-why3"
 description: "why3 plugin for icon project"
 depends: [
   "dune" {>= "2.9"}
+  "ocaml" {>= "4.14"}
   "why3" {>= "1.7.0"}
   "re"
   "odoc" {with-doc}
