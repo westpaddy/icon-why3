@@ -521,43 +521,40 @@ module Generator (D : Desc) = struct
       ]
 
   let operation_ty_def =
-    Dtype
-      [
-        {
-          td_loc = Loc.dummy_position;
-          td_ident = operation_ty_ident;
-          td_params = [];
-          td_vis = Public;
-          td_mut = false;
-          td_inv = [];
-          td_wit = None;
-          td_def =
-            TDalgebraic
+    {
+      td_loc = Loc.dummy_position;
+      td_ident = operation_ty_ident;
+      td_params = [];
+      td_vis = Public;
+      td_mut = false;
+      td_inv = [];
+      td_wit = None;
+      td_def =
+        TDalgebraic
+          [
+            ( Loc.dummy_position,
+              xfer_cstr_ident,
+              [
+                (Loc.dummy_position, None, false, gparam_pty);
+                ( Loc.dummy_position,
+                  None,
+                  false,
+                  Sort.pty_of_sort Sort.S_mutez );
+                ( Loc.dummy_position,
+                  None,
+                  false,
+                  Sort.pty_of_sort Sort.S_address );
+              ] );
+            ( Loc.dummy_position,
+              sdel_cstr_ident,
               [
                 ( Loc.dummy_position,
-                  xfer_cstr_ident,
-                  [
-                    (Loc.dummy_position, None, false, gparam_pty);
-                    ( Loc.dummy_position,
-                      None,
-                      false,
-                      Sort.pty_of_sort Sort.S_mutez );
-                    ( Loc.dummy_position,
-                      None,
-                      false,
-                      Sort.pty_of_sort Sort.S_address );
-                  ] );
-                ( Loc.dummy_position,
-                  sdel_cstr_ident,
-                  [
-                    ( Loc.dummy_position,
-                      None,
-                      false,
-                      Sort.pty_of_sort Sort.(S_option S_key_hash) );
-                  ] );
-              ];
-        };
-      ]
+                  None,
+                  false,
+                  Sort.pty_of_sort Sort.(S_option S_key_hash) );
+              ] );
+          ];
+    }
 
   let ctx_wf_def : decl =
     let ctx : param = mk_param "ctx" ctx_pty in
@@ -848,19 +845,16 @@ let gen_gparam (epp : Sort.t list StringMap.t StringMap.t) =
            epp
       @@ S.singleton (Loc.dummy_position, ident "GpUnknown", []))
   in
-  Dtype
-    [
-      {
-        td_loc = Loc.dummy_position;
-        td_ident = Ptree_helpers.ident "gparam";
-        td_params = [];
-        td_vis = Public;
-        td_mut = false;
-        td_inv = [];
-        td_wit = None;
-        td_def;
-      };
-    ]
+  {
+    td_loc = Loc.dummy_position;
+    td_ident = Ptree_helpers.ident "gparam";
+    td_params = [];
+    td_vis = Public;
+    td_mut = false;
+    td_inv = [];
+    td_wit = None;
+    td_def;
+  }
 
 let convert_mlw (tzw : Tzw.t) =
   let epp = tzw.tzw_epp in
@@ -933,10 +927,11 @@ let convert_mlw (tzw : Tzw.t) =
   let module G = Generator (struct
     let desc = { d_contracts; d_whyml = [] }
   end) in
+  let ty_defs = Dtype [gen_gparam epp; G.operation_ty_def] in
   return
   @@ Modules [ ident "Top",
                tzw.tzw_preambles
-               @ (gen_gparam epp :: G.operation_ty_def :: ds)
+               @ (ty_defs :: ds)
                @ [ G.ctx_ty_def; G.ctx_wf_def ]
                @ tzw.tzw_postambles @ invariants
                @ [ Drec (G.unknown_func_def :: G.func_def) ]
