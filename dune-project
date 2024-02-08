@@ -8,6 +8,9 @@
  (name icon)
  (synopsis "icon-why3")
  (description "why3 plugin for icon project")
- (depends 
-   (why3 (>= "1.7.0"))
-   re))
+ (depends
+  (ocaml
+   (>= "4.14"))
+  (why3
+   (>= "1.7.0"))
+  re))
