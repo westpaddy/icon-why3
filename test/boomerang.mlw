@@ -51,7 +51,7 @@ let rec ghost unknown (g : int) (c : ctx) : ctx
   else
   if any bool then c
   else
-  let st = any step ensures { st_wf result } in
+  let st = any step ensures { step_wf result } in
   let dst = st.self in
   let p = any param in
   assume
@@ -74,7 +74,7 @@ let rec ghost unknown (g : int) (c : ctx) : ctx
 
 with ghost boomerang_func (g : int) (st : step) (p : unit) (c : ctx) : ctx
   requires { st.self = boomerang }
-  requires { st_wf st }
+  requires { step_wf st }
   requires { ctx_wf c }
   ensures { ctx_wf result }
   requires { c.ledger[st.self] >= st.amount }

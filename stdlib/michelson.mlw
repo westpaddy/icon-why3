@@ -106,23 +106,20 @@ module Michelson
 
   type or 'a 'b = Left 'a | Right 'b
 
-  type step = (address, address, address, Mutez.t)
+  type step =
+    { source : address;
+      sender : address;
+      self : address;
+      amount : mutez
+    }
 
-  function mk_step (source : address) (sender : address) (self : address) (amount : Mutez.t) : step =
-    (source, sender, self, amount)
+  function mk_step (source : address) (sender : address) (self : address) (amount : mutez) : step =
+    { source= source;
+      sender= sender;
+      self= self;
+      amount= amount
+    }
 
-  function source (st : step) : address =
-    match st with x, _, _, _ -> x end
-
-  function sender (st : step) : address =
-    match st with _, x, _, _ -> x end
-
-  function self (st : step) : address =
-    match st with _, _, x, _ -> x end
-
-  function amount (st : step) : Mutez.t =
-    match st with _, _, _, x -> x end
-
-  predicate st_wf (st : step) = true
+  predicate step_wf (st : step) = true
 
 end
