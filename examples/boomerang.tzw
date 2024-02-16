@@ -20,21 +20,24 @@ scope Preambles
 
   type timestamp = int
 
-  type ep =
+  type entrypoints =
     | Ep'0default
 
-  type contract = (ep, int)
+  type contract =
+    { contract_ep: entrypoints;
+      contract_addr: address;
+    }
 
   type or 'a 'b = Left 'a | Right 'b
 
   type step = 
     { source: address;
       sender: address;
-      self: address;
+      self: contract;
       amount: mutez
     }
 
-  function mk_step (source : address) (sender : address) (self : address) (amount : mutez) : step =
+  function mk_step (source : address) (sender : address) (self : contract) (amount : mutez) : step =
     { source= source; 
       sender= sender;
       self= self;
@@ -74,7 +77,7 @@ scope Boomerang
 
   predicate default (st : step) (_p : unit) (_s : storage) (ops : list operation) (_s' : storage) =
     (st.amount = 0 -> ops = Nil) /\
-    (st.amount > 0 -> ops = Cons (Xfer (() : unit) st.amount (Contract st.sender)) Nil)
+    (st.amount > 0 -> ops = Cons ((Xfer:unit) () st.amount (ICon.Contract st.sender)) Nil)
 
   end
 

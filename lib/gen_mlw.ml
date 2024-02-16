@@ -160,10 +160,10 @@ module Generator (D : Desc) = struct
     E.mk_app (qid @@ id_store_of c) [ ctx ]
 
   let update_balance_of (c : contract) (ctx : expr) (e : expr) : expr =
-    Ptree_helpers.expr @@ Eupdate (ctx, [ (qid @@ id_balance_of c, e) ])
+    E.mk_update ctx [ (qid @@ id_balance_of c, e) ]
 
   let update_storage_of (c : contract) (ctx : expr) (e : expr) : expr =
-    Ptree_helpers.expr @@ Eupdate (ctx, [ (qid @@ id_store_of c, e) ])
+    E.mk_update ctx [ (qid @@ id_store_of c, e) ]
 
   let incr_balance_of (c : contract) (ctx : expr) (amt : expr) : expr =
     update_balance_of c ctx @@ E.mk_bin (balance_of c ctx) "+" amt
@@ -187,6 +187,7 @@ module Generator (D : Desc) = struct
           e)
       contracts (call_unknown ctx)
 
+  (* This [let+] presents eDSL constructing a let-expressoin Ptree of Why3. *)
   let ( let+ ) e f =
     let x = fresh_id () in
     E.mk_let x e (f (E.mk_var x))
@@ -421,7 +422,7 @@ module Generator (D : Desc) = struct
                 ( Loc.dummy_position,
                   None,
                   false,
-                  Sort.pty_of_sort Sort.S_address );
+                  Sort.pty_of_sort Sort.(S_contract S_int) );
               ] );
             ( Loc.dummy_position,
               sdel_cstr_ident,
@@ -510,7 +511,27 @@ let convert_gparam (epp : Sort.t list StringMap.t StringMap.t) (t : Ptree.term)
       *)
 let convert_entrypoint (epp : Sort.t list StringMap.t StringMap.t)
     (ep : Tzw.entrypoint) : Ptree.logic_decl iresult =
+  let open Ptree_mapper in
+  let convert self = function
+    | {
+        term_desc =
+          Ptree.Tapply
+            ( {
+                term_desc =
+                  Ptree.Tident
+                    (Qdot
+                      (Qident { id_str = "ICon"; _ }, { id_str = "Contract"; _ }));
+                _;
+              },
+              t_arg );
+        _;
+      } ->
+        let t_arg = self.term self t_arg in
+        Contract.mk_term (ident "Ep'0default") t_arg
+    | other -> default_mapper.term self other
+  in
   let* body = convert_gparam epp ep.ep_body in
+  let body = apply_term body { default_mapper with term = convert } in
   return
     {
       ld_loc = ep.ep_loc;
@@ -738,13 +759,13 @@ end)
       | 'Gp'0unit unit
       | ...
     v}
-     *)
+*)
 let gen_gparam (ts : SortListSet.t) =
   let td_def =
     SortListSet.fold
       (fun param_tys tl ->
         ( Loc.dummy_position,
-          Ptree_helpers.ident @@ gen_gparam_cstr param_tys,
+          ident @@ gen_gparam_cstr param_tys,
           List.map
             (fun s -> (Loc.dummy_position, None, false, Sort.pty_of_sort s))
             param_tys )
@@ -754,7 +775,7 @@ let gen_gparam (ts : SortListSet.t) =
   in
   {
     td_loc = Loc.dummy_position;
-    td_ident = Ptree_helpers.ident "gparam";
+    td_ident = gparam_ty_ident;
     td_params = [];
     td_vis = Public;
     td_mut = false;
@@ -765,6 +786,11 @@ let gen_gparam (ts : SortListSet.t) =
 
 let convert_mlw (tzw : Tzw.t) =
   let epp = tzw.tzw_epp in
+  let ts =
+    StringMap.fold
+      (fun _ -> StringMap.fold (fun _ -> SortListSet.add))
+      epp SortListSet.empty
+  in
   let* ds = List.map_e (convert_contract epp) tzw.tzw_knowns in
   let* invariants =
     let* lds =
@@ -843,7 +869,7 @@ let convert_mlw (tzw : Tzw.t) =
           Dtype
             [
               (* type gparam = .. *)
-              gen_gparam epp;
+              gen_gparam ts;
               (* with operation = .. *)
               G.operation_ty_def;
             ];

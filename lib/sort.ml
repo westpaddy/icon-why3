@@ -184,7 +184,9 @@ let rec pty_of_sort (s : t) : Ptree.pty =
   | S_timestamp -> ty "timestamp"
   | S_mutez -> ty "mutez"
   | S_address -> ty "address"
-  | S_contract s -> PTtyapp (qualid [ "contract" ], [ pty_of_sort s ])
+  | S_contract _s ->
+      (* Ignore type parameter of contract in why3 *)
+      ty "contract"
   | S_operation -> ty "operation"
   | S_key -> ty "key"
   | S_key_hash -> ty "key_hash"
