@@ -14,12 +14,13 @@ let is_step_type (pty : Ptree.pty) : bool = is_id_type pty Id.step_ty
 let is_storage_type (pty : Ptree.pty) : bool = is_id_type pty Id.storage_ty
 
 type entrypoint_params = {
-  epp_step : Ptree.param;
-  epp_param : Ptree.param list;
-  epp_old_s : Ptree.param;
-  epp_new_s : Ptree.param;
-  epp_ops : Ptree.param;
+  epp_step : Ptree.param;  (** step_constant *)
+  epp_param : Ptree.param list;  (** entrypoint's formal parameters *)
+  epp_old_s : Ptree.param;  (** orignal strage value *)
+  epp_new_s : Ptree.param;  (** updated storage value *)
+  epp_ops : Ptree.param;  (** internal operations *)
 }
+(** Parameters of an entrypoint *)
 
 type entrypoint = {
   ep_loc : Loc.position;
@@ -46,8 +47,11 @@ type t = {
   tzw_unknown_post : Ptree.logic_decl;
 }
 
-(** entrypoint params are "(st : step) (p1 : t1) ... (pn : tn) (s : store) (ops : list operation) (s' : store)", where "t1 ... tn" must be a michelson type. *)
-let parse_entrypoint_params (params : Ptree.param list) =
+(** Check if a given parameter list of an entrypoint follows the convention below, and compose them into [entrypoint_params] record.
+
+    Entrypoint params are "(st : step) (p1 : t1) ... (pn : tn) (s : store) (ops : list operation) (s' : store)", where "t1 ... tn" must be a michelson type. *)
+let parse_entrypoint_params (params : Ptree.param list) :
+    entrypoint_params iresult =
   let param_loc (l, _, _, _) = l in
   let param_pty (_, _, _, pty) = pty in
   let* st, params =

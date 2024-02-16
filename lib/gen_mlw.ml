@@ -506,8 +506,10 @@ let convert_gparam (epp : Sort.t list StringMap.t StringMap.t) (t : Ptree.term)
   try return @@ apply_term t { default_mapper with ident = convert }
   with Loc.Located (loc, Failure s) -> error_with ~loc "%s" s
 
+(** Translate given entrypoints' definitions. During the translation, special constructor [Gp'*]s in the body of each definition are replaced by the corresponding constructors.
+      *)
 let convert_entrypoint (epp : Sort.t list StringMap.t StringMap.t)
-    (ep : Tzw.entrypoint) =
+    (ep : Tzw.entrypoint) : Ptree.logic_decl iresult =
   let* body = convert_gparam epp ep.ep_body in
   return
     {
@@ -525,6 +527,7 @@ let convert_entrypoint (epp : Sort.t list StringMap.t StringMap.t)
     {v
     predicate spec (st: step) (gp : gparam) (s: storage) (op: list operation) (s': storage) =
       match st.self gp with
+      | entrypoint1 p1 ... pn -> Spec.entrypoint1 st s op s' p1 ... pn
       | ...
       | _ -> false
       end
