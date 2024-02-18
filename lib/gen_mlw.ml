@@ -934,14 +934,9 @@ let convert_mlw (tzw : Tzw.t) =
       tzw.tzw_knowns
   in
   let* preambles =
-    let* libs =
-      if !Options.preamble then
-        match parse_string Preambles.preambles with
-        | Decls ds -> return ds
-        | _ -> error_with "invalid prembles: preambles must be list of declarations"
-      else (return [])
-    in
-    return (libs @ tzw.tzw_preambles)
+    match parse_string Preambles.preambles with
+    | Decls ds -> return (ds @ tzw.tzw_preambles)
+    | _ -> error_with "invalid prembles: preambles must be list of declarations"
   in
   let module G = Generator (struct
     let desc = { d_contracts; d_whyml = [] }

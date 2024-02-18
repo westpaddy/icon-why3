@@ -10,14 +10,12 @@ let usage = "icon <file>"
 (*     usage *)
 
 let () =
-  let files = ref [] in
-  Arg.parse Options.speclist (fun file -> files := file :: !files) usage;
-
-  List.iter (fun file ->
-    let f = Gen_mlw.parse_file file in
-    Format.printf "%a@." (Mlw_printer.pp_mlw_file ~attr:true)
-      @@ Gen_mlw.from_mlw f
-  ) !files
+  Arg.parse []
+    (fun file ->
+       let f = Gen_mlw.parse_file file in
+       Format.printf "%a@." (Mlw_printer.pp_mlw_file ~attr:true)
+       @@ Gen_mlw.from_mlw f)
+    usage
 
 (* let mlw_file = Gen_mlw.file @@ Translator.parse_file "test/dexter_c.mlw" *)
 (* let () = Format.printf "%a@." (Mlw_printer.pp_mlw_file ~attr:true) mlw_file *)
