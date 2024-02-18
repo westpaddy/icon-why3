@@ -861,11 +861,9 @@ let gen_gparam (epp : Sort.t list StringMap.t StringMap.t) =
     td_def;
   }
 
-let parse_file fn =
-  In_channel.with_open_text fn (fun ic ->
-    let lexbuf = Lexing.from_channel ic in
-    Lexing.set_filename lexbuf fn ;
-    Lexer.parse_mlw_file lexbuf)
+let parse_string s =
+  let lexbuf = Lexing.from_string s in
+  Lexer.parse_mlw_file lexbuf
 
 let convert_mlw (tzw : Tzw.t) =
   let epp = tzw.tzw_epp in
@@ -938,9 +936,9 @@ let convert_mlw (tzw : Tzw.t) =
   let* preambles =
     let* libs =
       if !Options.preamble then
-        match parse_file "stdlib/preambles.mlw" with
+        match parse_string Preambles.preambles with
         | Decls ds -> return ds
-        | _ -> error_with "invalid premble: preamble must be list of declarations"
+        | _ -> error_with "invalid prembles: preambles must be list of declarations"
       else (return [])
     in
     return (libs @ tzw.tzw_preambles)
@@ -996,6 +994,12 @@ let convert_mlw (tzw : Tzw.t) =
 (*     @ desc.d_whyml *)
 (*     (\* @ List.map (fun ld -> Dlogic [ ld ]) G.spec *\) *)
 (*     @ [ Drec (G.unknown_func_def :: G.func_def) ]) *)
+
+let parse_file fn =
+  In_channel.with_open_text fn (fun ic ->
+    let lexbuf = Lexing.from_channel ic in
+    Lexing.set_filename lexbuf fn ;
+    Lexer.parse_mlw_file lexbuf)
 
 let from_mlw mlw =
   let r = Tzw.parse_mlw mlw >>= convert_mlw in
