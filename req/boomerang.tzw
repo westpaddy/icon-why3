@@ -25,11 +25,11 @@ scope Preambles
   type step = 
     { source: address;
       sender: address;
-      self: address;
+      self: contract;
       amount: mutez
     }
 
-  function mk_step (source : address) (sender : address) (self : address) (amount : mutez) : step =
+  function mk_step (source : address) (sender : address) (self : contract) (amount : mutez) : step =
     { source= source; 
       sender= sender;
       self= self;
@@ -47,12 +47,6 @@ scope Unknown
   predicate post (c : ctx) (c' : ctx) =
     c.boomerang_balance = c'.boomerang_balance
 
-  scope Entrypoint
-
-  predicate default unit
-
-  end
-
 end
 
 scope Boomerang
@@ -69,7 +63,7 @@ scope Boomerang
 
   predicate default (st : step) (_p : unit) (_s : storage) (ops : list operation) (_s' : storage) =
     (st.amount = 0 -> ops = Nil) /\
-    (st.amount > 0 -> ops = Cons (Xfer (Gp'Unknown'default ()) st.amount st.sender) Nil)
+    (st.amount > 0 -> ops = Cons (Xfer (ICon.Gp.unit ()) st.amount (ICon.Contract st.sender)) Nil)
 
   end
 

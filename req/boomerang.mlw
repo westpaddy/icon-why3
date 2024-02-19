@@ -1,0 +1,180 @@
+module Top
+  use export int.Int
+  use export int.Abs
+  use export int.EuclideanDivision
+  use export list.List
+  use export option.Option
+  use export map.Map
+  use export map.Const
+  
+  exception Insufficient_mutez
+  
+  exception Terminate
+  
+  type nat = int
+  
+  type mutez = int
+  
+  type address = int
+  
+  type key_hash = int
+  
+  type timestamp = int
+  
+  type or 'a  'b = 
+      | Left 'a
+      | Right 'b
+
+  type entrypoint =
+      | Ep'0default
+      | EpUnknown
+
+  type contract = {
+             ct_ep : entrypoint;
+             ct_addr : address
+             }
+  
+  type step = {
+             source : address;
+             sender : address;
+             self : contract;
+             amount : mutez
+             }
+  
+  function mk_step (source: address) (sender: address) (self: contract) (amount: mutez) : step =
+    { source = source ; sender = sender ; self = self ; amount = amount }
+  
+  predicate step_wf (st: step) = (st.amount) >= 0
+  
+  type gparam = 
+      | Gp'0unit unit
+      | GpUnknown
+  with operation = 
+      | Xfer gparam mutez contract
+      | Sdel (option key_hash)
+  
+  scope Boomerang
+    function addr : address
+    
+    type storage = unit
+    
+    predicate param_wf (gp: gparam) =
+      match gp with
+      | Gp'0unit _p0 -> (true /\ true)
+      | _ -> false
+      end
+    
+    predicate storage_wf (_s: storage) = true
+    
+    scope Spec
+      predicate default (st: step) (_s: storage) (ops: list operation) (_s': storage) (_p: unit) =
+        (((st.amount) = 0) -> (ops = Nil))
+          /\
+          (((st.amount) > 0) ->
+             (ops
+              =
+              (Cons (Xfer (Gp'0unit ()) (st.amount) ({ ct_ep = Ep'0default; ct_addr = st.sender })) Nil)))
+      end
+    
+    predicate spec (st: step) (gp: gparam) (s: storage) (op: list operation) (s': storage) =
+      match st.self.ct_ep, gp with
+      | Ep'0default, Gp'0unit _p0 -> Spec.default st s op s' _p0
+      | _ -> false
+      end
+    end
+  
+  type ctx = {
+            boomerang_storage : Boomerang.storage;
+            boomerang_balance : mutez
+            }
+  
+  predicate ctx_wf (ctx: ctx) =
+    (((ctx.boomerang_balance) >= 0) /\
+       (((ctx.boomerang_storage).Boomerang.storage_wf) /\ true))
+  
+  predicate inv_pre (_c: ctx) = true
+  
+  predicate inv_post (c: ctx) (c': ctx) =
+    (c.boomerang_balance)
+    =
+    (c'.boomerang_balance)
+  
+  predicate boomerang_pre (_c: ctx) = true
+  
+  predicate boomerang_post (_st: step) (_gp: gparam) (c: ctx) (c': ctx) =
+    inv_post c c'
+  
+  let rec ghost unknown g c
+    requires { c.ctx_wf }
+    requires { c.inv_pre }
+    ensures { result.ctx_wf }
+    
+    ensures { inv_post c result }
+    raises { Terminate }
+    raises { Insufficient_mutez }
+    variant { g } =
+    if (g < 0) then (raise Terminate)
+    else
+      (if (any bool) then c
+       else
+         (val x1 : step
+            ensures { result.step_wf } in
+          val x2 : gparam in
+          assume {
+            ((true /\ (not ((x1.source) = Boomerang.addr))) /\
+               (not ((x1.sender) = Boomerang.addr))) };
+          (let x3 =
+             if ((x1.self.ct_addr) = Boomerang.addr) then
+               (assume { x2.Boomerang.param_wf };
+                (boomerang_func (g - 1) x1 x2 c))
+             else (unknown (g - 1) c) in
+           unknown (g - 1) x3)))
+  with ghost boomerang_func g st gp c
+    requires { ((st.self.ct_addr) = Boomerang.addr) }
+    requires { c.ctx_wf }
+    requires { st.step_wf }
+    requires { gp.Boomerang.param_wf }
+    requires { c.boomerang_pre }
+    ensures { result.ctx_wf }
+    
+    ensures { boomerang_post st gp c result }
+    raises { Terminate }
+    raises { Insufficient_mutez }
+    variant { g } =
+    if (g < 0) then (raise Terminate)
+    else
+      (let x4 =
+         { c with boomerang_balance = ((c.boomerang_balance) + (st.amount)) } in
+       val x5 : Boomerang.storage
+         ensures { result.Boomerang.storage_wf } in
+       val x6 : (list operation) in
+       assume { Boomerang.spec st gp (x4.boomerang_storage) x6 x5 };
+       (let x7 = { x4 with boomerang_storage = x5 } in
+        match x6 with
+        | Nil  -> x7
+        | Cons x8 Nil  ->
+            let x14 =
+              match x8 with
+              | Sdel _ -> x7
+              | Xfer x9 x10 x11 ->
+                  assume { (x10 >= 0) };
+                  (if ((x7.boomerang_balance) < x10) then
+                     (raise Insufficient_mutez)
+                   else
+                     (let x12 =
+                        { x7 with
+                          boomerang_balance = ((x7.boomerang_balance) - x10) } in
+                      let x13 =
+                        { source = (st.source) ;
+                          sender = (st.self.ct_addr) ;
+                          self = x11 ;
+                          amount = x10 } in
+                      if ((x13.self.ct_addr) = Boomerang.addr) then
+                        (assume { x9.Boomerang.param_wf };
+                         (boomerang_func (g - 1) x13 x9 x12))
+                      else (unknown (g - 1) x12)))
+              end in
+            x14
+        | _ -> absurd
+        end))
+end
